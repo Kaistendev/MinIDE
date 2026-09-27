@@ -15,7 +15,6 @@ use miniide::project::{
 use miniide::runtime::{ProcessOutput, ProcessState, RunResult};
 use miniide::supports::Supports;
 use miniide::toolchain::{Invocation, ToolchainProvider};
-use miniide::ui::UiState;
 use miniide::workspace::Workspace;
 
 #[test]
@@ -24,7 +23,6 @@ fn core_modules_are_reachable_from_outside_the_crate() {
     let _: TextRange = TextRange::collapsed(TextPosition::new(0, 0));
     let _: ProjectRelativePath = ProjectRelativePath::new("src/main.rs").unwrap();
     let _: CommandOutcome = CommandOutcome::Completed;
-    let _: UiState = UiState::new();
 }
 
 #[test]

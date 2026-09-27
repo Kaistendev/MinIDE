@@ -165,15 +165,23 @@ impl DiagnosticsPanel {
         sorted.sort_by_key(|diagnostic| order_of(diagnostic.level()));
 
         for diagnostic in sorted {
-            let group = match panel.groups.last_mut() {
-                Some(group) if group.level() == diagnostic.level() => group,
+            let nivel = diagnostic.level();
+
+            // Se sigue el indice del grupo en vez de un `&mut` al ultimo: si el grupo
+            // acaba de anadirse, el indice es seguro, y sin el `expect` que hacia falta
+            // para no devolver un `Option` del recien creado. Era el unico `unwrap` del
+            // codigo de produccion, y en un sitio donde el IDE construye el panel
+            // justo despues de compilar.
+            let indice = match panel.groups.last() {
+                Some(grupo) if grupo.level() == nivel => panel.groups.len() - 1,
                 _ => {
-                    panel.groups.push(DiagnosticGroup::new(diagnostic.level()));
-                    panel.groups.last_mut().expect("el grupo recien creado")
+                    panel.groups.push(DiagnosticGroup::new(nivel));
+
+                    panel.groups.len() - 1
                 }
             };
 
-            let accepted = group.push(diagnostic);
+            let accepted = panel.groups[indice].push(diagnostic);
 
             debug_assert!(accepted, "el grupo es del nivel del diagnostico");
         }

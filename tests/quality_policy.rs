@@ -22,7 +22,38 @@ fn format_config_pins_edition_and_width() {
 fn lint_config_declares_msrv() {
     let config = read_repo_file("clippy.toml");
 
-    assert!(config.contains("msrv = \"1.75\""));
+    assert!(config.contains("msrv = \"1.95\""));
+}
+
+/// La version minima que declara el lint y la que declara el crate tienen que ser la
+/// misma.
+///
+/// Clippy usa `msrv` para no sugerir APIs mas nuevas de las que se puede usar, asi
+/// que si las dos cifras se separan, el lint deja de proteger justo lo que dice
+/// proteger. Addadir el stack de la interfaz subio el minimo a `1.95` y las cuatro
+/// menciones de la cifra hubo que cambiarlas a mano.
+#[test]
+fn the_lint_msrv_matches_the_crate_rust_version() {
+    let clippy = read_repo_file("clippy.toml");
+    let manifest = read_repo_file("Cargo.toml");
+
+    let lint = declared(&clippy, "msrv = ");
+    let manifest_version = declared(&manifest, "rust-version = ");
+
+    assert_eq!(
+        lint, manifest_version,
+        "clippy.toml y Cargo.toml tienen que declarar la misma version minima"
+    );
+}
+
+/// El valor de una entrada `clave = valor` del primer lugar donde aparece.
+fn declared(content: &str, prefix: &str) -> Option<String> {
+    content.lines().find_map(|line| {
+        let line = line.trim();
+
+        line.starts_with(prefix)
+            .then(|| line[prefix.len()..].trim_matches('"').to_string())
+    })
 }
 
 #[test]

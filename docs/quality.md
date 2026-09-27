@@ -35,7 +35,7 @@ cargo fmt --check  # verifica el formato sin modificar archivos
 Configuración: `clippy.toml`
 
 ```toml
-msrv = "1.75"
+msrv = "1.95"
 ```
 
 `msrv` coincide con `rust-version` de `Cargo.toml`. Clippy no debe sugerir APIs más nuevas que la versión mínima soportada.
@@ -111,6 +111,6 @@ cargo test
 
 ## 8. Nota sobre el toolchain
 
-`rust-toolchain.toml` no se fija todavía. La versión activa es la que reporta `rustc --version`, y la compatibilidad mínima declarada es `1.75` (soportada por el uso de la tabla `[lints]`, estable desde Cargo 1.74).
+`rust-toolchain.toml` no se fija todavía. La versión activa es la que reporta `rustc --version`, y la compatibilidad mínima declarada es `1.95`, la que exige `eframe` (`docs/frontend-plan.md` FD-01). Antes de añadir el stack de la interfaz era `1.75`, y subirla fue el precio de no empezar con una versión de eframe de 2024.
 
 Fijar el toolchain se hará cuando exista una razón concreta, por ejemplo una versión de .NET SDK o JDK condicionada por el entorno de compilación.

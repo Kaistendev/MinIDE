@@ -3,7 +3,11 @@
 //! El crate expone módulos independientes entre sí: `core`, `document`,
 //! `editor`, `language`, `framework`, `generation`, `project`, `workspace`,
 //! `build`, `runtime`, `toolchain`, `supports`, `templates`, `diagnostics`,
-//! `commands` y `ui`. Ninguno depende de C#, Java, WinForms o Swing.
+//! `commands` y `frontend`. Ninguno depende de C#, Java, WinForms o Swing.
+//!
+//! `frontend` es la excepción a propósito, y solo en un sentido: es el único módulo
+//! que puede usar a todos los demás, porque la interfaz consume el core y le emite
+//! comandos. El core no depende del frontend y ni lo menciona.
 //!
 //! # Ejemplo
 //!
@@ -27,6 +31,7 @@ pub mod diagnostics;
 pub mod document;
 pub mod editor;
 pub mod framework;
+pub mod frontend;
 pub mod generation;
 pub mod language;
 pub mod project;
@@ -34,7 +39,6 @@ pub mod runtime;
 pub mod supports;
 pub mod templates;
 pub mod toolchain;
-pub mod ui;
 pub mod workspace;
 
 pub const APP_NAME: &str = "MiniIDE";

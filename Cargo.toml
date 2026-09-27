@@ -4,7 +4,7 @@
 name = "miniide"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.95"
 description = "MiniIDE - IDE minimalista para Windows implementado en Rust"
 publish = false
 
@@ -26,5 +26,17 @@ todo = "deny"
 unimplemented = "deny"
 
 [dependencies]
+# El stack de la interfaz, decidido en `docs/frontend-plan.md` (FD-01): egui para
+# los widgets y eframe para la ventana. Solo se pide lo que hace falta en Windows,
+# con el renderizador de OpenGL y las fuentes incluidas; los backends de Linux y el
+# lector de pantalla web se dejan fuera porque aqui no se usan.
+eframe = { version = "0.36.2", default-features = false, features = ["default_fonts", "glow"] }
+# El logo de la ventana. Solo PNG, y con los mismos features que ya usan las
+# dependencias de eframe, asi que no se compila nada que no estuviera compilado.
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[build-dependencies]
+# Incrusta el icono en el ejecutable. Es Rust puro y no necesita el SDK de Windows.
+winresource = "0.1"
 
 [dev-dependencies]

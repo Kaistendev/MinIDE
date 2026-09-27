@@ -315,7 +315,7 @@ fn state_from(stopped: bool, waited: Waited) -> ProcessState {
     }
 }
 
-/// Los procesos que MiniIDE ha lanzado y sigue teniendolocalizados.
+/// Los procesos que MiniIDE ha lanzado y sigue teniendo localizados.
 ///
 /// Existe para que un proceso se pueda volver a encontrar: sin el, un proceso
 /// lanzado se pierde en el sistema y no se puede consultar ni detener.

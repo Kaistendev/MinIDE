@@ -25,7 +25,7 @@ fn logic_modules() -> Vec<PathBuf> {
                 continue;
             }
 
-            if path.extension().map_or(true, |extension| extension != "rs") {
+            if path.extension().is_none_or(|extension| extension != "rs") {
                 continue;
             }
 
@@ -108,7 +108,7 @@ fn filesystem_and_workspace_tests_do_not_depend_on_the_ui() {
         let source = read_repo_file(file);
 
         assert!(
-            !source.contains("miniide::ui"),
+            !source.contains("miniide::frontend"),
             "{file} must exercise the filesystem and the workspace without the UI"
         );
     }

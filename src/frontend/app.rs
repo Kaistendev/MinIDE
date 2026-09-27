@@ -1,0 +1,245 @@
+//! La ventana mínima de MiniIDE.
+//!
+//! Es la ventana de verdad, de eframe, con su ciclo de ejecución. A partir de aquí
+//! MiniIDE se abre en una ventana y se cierra como cualquier otra.
+//!
+//! Lo que hay dentro es lo mínimo: un panel central con el nombre de la aplicación.
+//! El contenido de verdad lo traen las siguientes tareas, y cada una lo añade en su
+//! sitio (layout en FE-005, menú en FE-006, estado visual en FE-004).
+//!
+//! Dibujar y abrir están separados a propósito: `ventana` pinta en un `Ui` y se puede
+//! recorrer en un test sin abrir nada, mientras que `run` es lo único que abre la
+//! ventana de verdad. Así el contenido de la interfaz se puede probar casi entero sin
+//! ventana, y lo único que hay que mirar a mano es que la ventana aparezca.
+
+use std::sync::Arc;
+
+use eframe::egui;
+
+use super::icon::icono;
+use super::ui_state::UiState;
+
+/// Titulo de la ventana.
+///
+/// Es el nombre de la aplicación y no el del binario ni el de un módulo, porque es lo
+/// que el usuario ve en la barra de tareas y en el conmutador de ventanas.
+pub fn titulo() -> &'static str {
+    crate::APP_NAME
+}
+
+/// Como se abre la ventana.
+///
+/// El tamaño se fija aquí y se deja que se pueda redimensionar: sin tamaño, cada
+/// equipo abriría MiniIDE con el que le toque, y una ventana mínima que cambia de
+/// tamaño no es una ventana.
+///
+/// El mínimo es más pequeño que el inicial a propósito: abrir pequeño en una pantalla
+/// pequeña y no impedir agrandar nunca.
+pub fn opciones() -> eframe::NativeOptions {
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_title(titulo())
+        .with_inner_size([1100.0, 700.0])
+        .with_min_inner_size([640.0, 400.0]);
+
+    // El icono se pone en el campo y no con `with_icon` porque el logo puede no
+    // cargar, y `with_icon` no admite "sin icono". Si no hay logo, no hay icono, que es
+    // como tiene que abrir un IDE al que se le ha roto la marca: con el de egui, no
+    // con un rectangulo en blanco.
+    viewport.icon = icono().map(Arc::new);
+
+    eframe::NativeOptions {
+        viewport,
+        // Por defecto eframe sigue vivo despues de cerrar la ventana, que es lo que
+        // hace una aplicacion que se puede volver a abrir. Un IDE no es eso: se cierra
+        // la ventana y se cierra MiniIDE, o el proceso se queda ahi sin ventana y sin
+        // forma de cerrarlo.
+        run_and_return: false,
+        ..eframe::NativeOptions::default()
+    }
+}
+
+/// La aplicación: la ventana de MiniIDE y su estado visual.
+///
+/// El estado visual vive aquí y no en la ventana, porque egui redibuja miles de veces
+/// por segundo y cada redibujado es una llamada a `ui`: lo que tiene que recordarse
+/// entre frames —qué panel está abierto, qué se está viendo, qué dice la barra de
+/// estado— necesita vivir en la aplicación, que es la misma para todos.
+///
+/// Lo que lleva es estado visual y nada más. El texto de un documento, el proyecto o
+/// el estado de una compilación no están aquí: se piden al core cuando hacen falta.
+/// Guardarlos sería tener dos verdades, y la copia se quedaría vieja sin que nadie se
+/// enterase.
+#[derive(Debug, Default)]
+pub struct App {
+    estado: UiState,
+}
+
+impl App {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// El estado visual de la ventana.
+    pub fn state(&self) -> &UiState {
+        &self.estado
+    }
+
+    /// El estado visual, para cambiarlo.
+    pub fn state_mut(&mut self) -> &mut UiState {
+        &mut self.estado
+    }
+}
+
+impl eframe::App for App {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        ventana(ui);
+    }
+}
+
+/// Dibuja el contenido de la ventana.
+pub fn ventana(ui: &mut egui::Ui) {
+    egui::CentralPanel::default().show(ui, |ui| {
+        ui.heading(titulo());
+    });
+}
+
+/// Abre la ventana y no vuelve hasta que se cierra.
+///
+/// La ventana se abre desde aquí y no desde el core: el core no sabe que existe una
+/// interfaz, y por eso sigue pudiendo probarse sin abrir nada.
+///
+/// Devuelve el error si la ventana no se puede abrir, para que quien la llama pueda
+/// contarlo. Una ventana que no abre y no dice nada parece un IDE que no funciona.
+pub fn run() -> eframe::Result {
+    eframe::run_native(
+        titulo(),
+        opciones(),
+        Box::new(|_creation| Ok(Box::new(App::new()) as Box<dyn eframe::App>)),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::frontend::icon::LADO;
+
+    /// La ventana se puede dibujar sin ventana.
+    ///
+    /// Es lo que permite probar el contenido de la interfaz sin abrir nada: egui
+    /// sabe ejecutar un frame con un contexto propio, asi que lo que se dibuja se
+    /// puede recorrer en un test. Lo que no se comprueba asi es que la ventana
+    /// aparezca en la pantalla y se pueda cerrar, que se mira a mano.
+    #[test]
+    fn the_window_content_can_be_drawn_without_a_window() {
+        let context = eframe::egui::Context::default();
+
+        let mut frame = context.run_ui(eframe::egui::RawInput::default(), ventana);
+
+        // egui avisa si se tiran sin aplicar las texturas que ha creado, y en una
+        // aplicacion de verdad las aplica el renderizador. Aqui no hay renderizador,
+        // asi que se vacian a proposito: lo que se prueba es que el contenido se
+        // dibuja, no los pixeles.
+        frame.textures_delta.clear();
+
+        assert!(
+            frame.pixels_per_point > 0.0,
+            "un frame dibujado tiene que decir a que escala se dibuja"
+        );
+    }
+
+    /// La ventana se titula con el nombre de la aplicacion, y no con el del binario
+    /// ni con el de un modulo: es lo que el usuario ve en la barra de tareas.
+    #[test]
+    fn the_window_is_titled_with_the_name_of_the_application() {
+        assert_eq!(titulo(), crate::APP_NAME);
+    }
+
+    /// La ventana tiene un tamano, porque si no la decide el sistema y MiniIDE
+    /// abriria con la que le salga a cada equipo.
+    #[test]
+    fn the_window_starts_with_a_size() {
+        let options = opciones();
+        let size = options
+            .viewport
+            .inner_size
+            .expect("la ventana tiene que tener un tamano");
+
+        assert!(
+            size.x > 0.0 && size.y > 0.0,
+            "el tamano tiene que servir: {size:?}"
+        );
+    }
+
+    /// La ventana lleva el logo de la aplicacion.
+    ///
+    /// El icono de la ventana y el del ejecutable son cosas distintas: este lo pone
+    /// egui, y el otro lo incrusta la compilacion. Los dos vienen del mismo PNG, y
+    /// este es el que se ve en la barra de tareas mientras MiniIDE esta abierto.
+    #[test]
+    fn the_window_carries_the_logo_as_its_icon() {
+        let icon = opciones()
+            .viewport
+            .icon
+            .expect("la ventana tiene que llevar el logo");
+
+        assert_eq!((icon.width, icon.height), (LADO, LADO));
+        assert!(
+            icon.rgba.iter().any(|byte| *byte != 0),
+            "un icono en blanco no es el logo"
+        );
+    }
+
+    /// La aplicacion lleva el estado visual, y solo ese.
+    ///
+    /// egui redibuja la ventana muchas veces por segundo y la misma aplicacion
+    /// atiende a todas: si el estado visual no vive en ella, cada frame tendria que
+    /// inventarselo otra vez y no habria forma de que un panel siguiera donde se
+    /// quedo. Y si en vez del estado visual lleva el estado del core, la ventana deja
+    /// de mirar y pasa a ser la fuente de verdad, que es justo lo que no puede pasar.
+    #[test]
+    fn the_app_carries_the_visual_state() {
+        let mut app = App::new();
+
+        assert_eq!(
+            app.state().status(),
+            None,
+            "una ventana nueva no tiene estado"
+        );
+
+        app.state_mut().set_status("Compilando...");
+
+        assert_eq!(
+            app.state().status(),
+            Some("Compilando..."),
+            "el estado visual se conserva entre frames: es de la aplicacion, no del frame"
+        );
+    }
+
+    /// La aplicacion es una aplicacion de eframe, y no un tipo suelto: sin esto el
+    /// contenido no llega a dibujarse nunca.
+    ///
+    /// Que este test compile ya es la comprobacion: `eframe::App` es lo que
+    /// `run_native` necesita para dibujar y para cerrar.
+    #[test]
+    fn the_app_is_an_eframe_app() {
+        fn es_eframe_app<T: eframe::App>() {}
+
+        es_eframe_app::<App>();
+    }
+
+    /// Cerrar la ventana cierra MiniIDE.
+    ///
+    /// eframe sigue vivo despues de cerrar la ventana salvo que se le diga lo
+    /// contrario, y en un IDE eso es un fallo: el usuario cierra la ventana y el
+    /// proceso se queda ahi, sin ventana y sin forma de cerrarlo.
+    ///
+    /// Este test viene de mirar la ventana de verdad, no de imaginarlo: se abrio,
+    /// se cerro y el proceso seguia.
+    #[test]
+    fn closing_the_window_closes_the_application() {
+        assert!(
+            !opciones().run_and_return,
+            "cerrar la ventana tiene que cerrar MiniIDE"
+        );
+    }
+}

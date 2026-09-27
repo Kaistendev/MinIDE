@@ -27,17 +27,17 @@
   - Definir egui/eframe como stack oficial del frontend.
   - Hecho cuando: la documentación del frontend declara egui/eframe y no existe otro toolkit de UI para el MVP.
 
-- [ ] **FE-002 — Crear módulo de frontend**
+- [x] **FE-002 — Crear módulo de frontend**
   - RF: RF-01, RNF-02
   - Crear el módulo/crate/carpeta destinado a la UI según la estructura real del proyecto.
   - Hecho cuando: el proyecto compila y el frontend tiene un punto de entrada separado del core.
 
-- [ ] **FE-003 — Crear aplicación mínima eframe**
+- [x] **FE-003 — Crear aplicación mínima eframe**
   - RF: RF-01
   - Crear la ventana mínima de eframe.
   - Hecho cuando: MiniIDE abre una ventana y puede cerrarse sin error.
 
-- [ ] **FE-004 — Definir `UiState` mínimo**
+- [x] **FE-004 — Definir `UiState` mínimo**
   - RF: RF-01, RNF-08
   - Separar estado visual de estado de dominio.
   - Hecho cuando: existe un tipo de estado UI que no contiene el contenido completo del proyecto ni la lógica de negocio.
