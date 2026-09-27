@@ -1,16 +1,7 @@
 use crate::core::{CoreError, CoreResult};
-use crate::generation::{CodeGenerator, DesignerComponent, DesignerModel, GeneratedCode};
-
-/// Marcador con el que empieza la zona que escribe MiniIDE en el archivo del
-/// disenador.
-///
-/// Vive aqui y no en la plantilla porque es el generador quien decide donde
-/// escribe, y los dos tienen que usar el mismo texto: si no, el generador
-/// escribiria una zona que la plantilla no tiene.
-pub const MARKER_BEGIN: &str = "// <MiniIDE>";
-
-/// Marcador con el que termina la zona que escribe MiniIDE.
-pub const MARKER_END: &str = "// </MiniIDE>";
+use crate::generation::{
+    CodeGenerator, DesignerComponent, DesignerModel, GeneratedCode, MARKER_BEGIN, MARKER_END,
+};
 
 /// Genera el codigo C# de un formulario de Windows Forms.
 ///

@@ -84,7 +84,7 @@ fn windows_forms_runtime_is_installed() -> bool {
 
     match runtime::run(&invocation) {
         Ok(output) => output
-            .standard_output
+            .standard_output()
             .contains("Microsoft.WindowsDesktop.App"),
         Err(error) => {
             eprintln!("no se puede preguntar por los runtimes de .NET: {error}");
@@ -164,8 +164,8 @@ fn a_generated_winforms_project_compiles_runs_and_can_be_stopped() {
     assert!(
         build.succeeded(),
         "el proyecto generado no compila.\n{}\n{}",
-        build.standard_output(),
-        build.standard_error()
+        build.output().standard_output(),
+        build.output().standard_error()
     );
 
     for diagnostic in build.diagnostics() {
@@ -213,12 +213,19 @@ fn a_generated_winforms_project_compiles_runs_and_can_be_stopped() {
     );
 }
 
+/// El flujo de este archivo compila y ejecuta con `dotnet`, asi que necesita un
+/// proyecto de C#. Un proyecto de Java no tiene su archivo de proyecto, y por eso
+/// este flujo no se puede aplicar a el.
 #[test]
-#[ignore = "necesita el SDK de .NET: comprueba que un proyecto Java no lo usa"]
-fn the_end_to_end_flow_is_only_for_csharp_winforms() {
-    let root = project_root("miniide-t065-tipo");
+fn a_java_project_is_not_a_csharp_project() {
+    let root = project_root("miniide-t065-java");
 
-    let result = create_project(ProjectType::JavaSwing, &root);
+    let project = create_project(ProjectType::JavaSwing, &root).expect("proyecto de Java");
 
-    assert!(result.is_err(), "no hay plantilla de Java todavia");
+    assert!(root.join("pom.xml").is_file());
+    assert!(
+        !root.join("App.csproj").exists(),
+        "un proyecto de Java no puede traer un archivo de proyecto de C#"
+    );
+    let _ = std::fs::remove_dir_all(project.root());
 }

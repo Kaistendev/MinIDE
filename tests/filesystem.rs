@@ -7,6 +7,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use miniide::core::{CoreError, FrameworkId, LanguageId, ProjectType};
 use miniide::document::TextPosition;
@@ -14,6 +15,7 @@ use miniide::editor::{Document, DocumentPath, Tab};
 use miniide::project::{
     BuildConfiguration, Project, ProjectFile, ProjectFileKind, ProjectRelativePath,
 };
+use miniide::supports::Supports;
 use miniide::templates::create_project;
 use miniide::toolchain::DotNetSdk;
 use miniide::workspace::Workspace;
@@ -1223,9 +1225,9 @@ fn a_generated_csharp_project_compiles() {
     assert!(
         result.succeeded(),
         "la compilacion fallo ({}):\n{}\n{}",
-        result.exit_code().unwrap_or(-1),
-        result.standard_output(),
-        result.standard_error()
+        result.output().exit_code().unwrap_or(-1),
+        result.output().standard_output(),
+        result.output().standard_error()
     );
 }
 
@@ -1257,8 +1259,8 @@ fn a_compilation_error_becomes_a_diagnostic_with_its_position() {
         .unwrap_or_else(|| {
             panic!(
                 "no se parseo ningun error:\n{}\n{}",
-                result.standard_output(),
-                result.standard_error()
+                result.output().standard_output(),
+                result.output().standard_error()
             )
         });
 
@@ -1269,6 +1271,82 @@ fn a_compilation_error_becomes_a_diagnostic_with_its_position() {
     assert_eq!(location.file().as_path(), Path::new("Form1.cs"));
     // `this.noExisteNada();` esta en la linea 9 de 1 en uno.
     assert_eq!(location.position().line(), 8);
+}
+
+#[test]
+#[ignore = "requires JDK"]
+fn a_generated_java_project_compiles() {
+    use miniide::build::build_with;
+    use miniide::toolchain::JdkToolchain;
+
+    let tree = TempTree::new("build-java");
+    let root = project_directory(&tree, "App");
+    let created = create_project(ProjectType::JavaSwing, &root).unwrap();
+
+    let result = build_with(&JdkToolchain, &created).unwrap();
+
+    assert!(
+        result.succeeded(),
+        "la compilacion fallo ({}):\n{}\n{}",
+        result.output().exit_code().unwrap_or(-1),
+        result.output().standard_output(),
+        result.output().standard_error()
+    );
+    assert_eq!(result.output().exit_code(), Some(0));
+    for class in ["bin/Main.class", "bin/MainWindow.class"] {
+        assert!(root.join(class).is_file(), "falta {class}");
+    }
+}
+
+#[test]
+#[ignore = "requires JDK"]
+fn a_broken_java_source_becomes_a_diagnostic_with_its_position() {
+    use miniide::build::build_with;
+    use miniide::diagnostics::DiagnosticLevel;
+    use miniide::toolchain::JdkToolchain;
+
+    let tree = TempTree::new("build-java-error");
+    let root = project_directory(&tree, "App");
+    let created = create_project(ProjectType::JavaSwing, &root).unwrap();
+    fs::write(
+        root.join("src/main/java/Main.java"),
+        "public class Main { estaNoCompila }\n",
+    )
+    .expect("broken source written");
+
+    let result = build_with(&JdkToolchain, &created).unwrap();
+
+    assert!(!result.succeeded(), "un fuente roto no puede compilar");
+    assert_ne!(result.output().exit_code(), Some(0));
+
+    let error = result
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.level() == DiagnosticLevel::Error)
+        .unwrap_or_else(|| {
+            panic!(
+                "no se parseo ningun error:\n{}\n{}",
+                result.output().standard_output(),
+                result.output().standard_error()
+            )
+        });
+
+    let location = error
+        .location()
+        .expect("el error de compilacion tiene archivo y linea");
+
+    assert_eq!(
+        location.file().as_path(),
+        Path::new("src").join("main").join("java").join("Main.java")
+    );
+    // El fuente roto esta entero en la primera linea, que el modelo cuenta desde 0.
+    assert_eq!(location.position().line(), 0);
+    // La salida de `javac` se conserva entera, ademas de los diagnosticos.
+    assert!(
+        result.output().standard_error().contains("Main.java"),
+        "la salida de javac no dice que archivo falla:\n{}",
+        result.output().standard_error()
+    );
 }
 
 fn project_directory(tree: &TempTree, name: &str) -> PathBuf {
@@ -1383,14 +1461,87 @@ fn a_relative_root_is_not_used_for_a_new_project() {
 }
 
 #[test]
-fn a_java_project_cannot_be_created_yet() {
-    let tree = TempTree::new("template-java");
+fn a_new_java_project_creates_its_directory_and_its_files() {
+    let tree = TempTree::new("template-java-archivos");
     let root = project_directory(&tree, "App");
 
-    let result = create_project(ProjectType::JavaSwing, &root);
+    let project = create_project(ProjectType::JavaSwing, &root).unwrap();
 
-    assert!(matches!(result, Err(CoreError::Unsupported(_))));
-    assert!(!root.exists());
+    assert!(root.is_dir());
+    assert_eq!(project.name(), "App");
+    assert_eq!(project.root(), root);
+    assert_eq!(project.project_type(), ProjectType::JavaSwing);
+    for file in [
+        "pom.xml",
+        "src/main/java/Main.java",
+        "src/main/java/MainWindow.java",
+    ] {
+        assert!(root.join(file).is_file(), "falta {file}");
+    }
+}
+
+#[test]
+fn the_created_java_project_can_be_opened_again() {
+    let tree = TempTree::new("template-java-reabrir");
+    let root = project_directory(&tree, "App");
+    create_project(ProjectType::JavaSwing, &root).unwrap();
+
+    let project = Project::open(&root.join("pom.xml")).unwrap();
+
+    assert_eq!(project.name(), "App");
+    assert_eq!(project.root(), root);
+    assert_eq!(project.project_type(), ProjectType::JavaSwing);
+}
+
+#[test]
+fn the_files_of_a_new_java_project_are_associated_with_java() {
+    let tree = TempTree::new("template-java-lenguaje");
+    let root = project_directory(&tree, "App");
+    let project = create_project(ProjectType::JavaSwing, &root).unwrap();
+    let supports = Supports::initial();
+
+    let sources: Vec<String> = relative_paths(&project)
+        .into_iter()
+        .filter(|path| path.ends_with(".java"))
+        .collect();
+
+    assert_eq!(
+        sources.len(),
+        2,
+        "el proyecto tiene dos fuentes: {sources:?}"
+    );
+
+    for source in sources {
+        let language = supports
+            .language_for(Path::new(&source))
+            .unwrap_or_else(|| panic!("{source} no se asocia a ningun lenguaje"));
+
+        assert_eq!(language.id(), LanguageId::Java, "{source}");
+        assert_eq!(language.editing().line_comment(), Some("//"), "{source}");
+        assert_eq!(language.editing().indent(), "    ", "{source}");
+    }
+}
+
+#[test]
+fn the_created_java_project_is_discovered_with_all_its_files() {
+    let tree = TempTree::new("template-java-descubrir");
+    let root = project_directory(&tree, "App");
+    let project = create_project(ProjectType::JavaSwing, &root).unwrap();
+
+    let mut found = relative_paths(&project);
+    found.sort();
+
+    assert_eq!(
+        found,
+        vec![
+            "pom.xml",
+            "src",
+            "src/main",
+            "src/main/java",
+            "src/main/java/Main.java",
+            "src/main/java/MainWindow.java",
+        ]
+    );
 }
 
 /// Mata un proceso y sus hijos, para no dejar ninguno vivo al terminar.
@@ -1400,19 +1551,168 @@ fn kill_process_tree(system_id: u32) {
         .output();
 }
 
+/// Si el proceso `system_id` sigue vivo en el sistema.
+///
+/// Se pregunta al sistema y no al registro: el registro dice que lo paro
+/// MiniIDE, que no es lo mismo que decir que el proceso ha muerto de verdad.
+/// Preguntar por su PID y no por el nombre de su imagen es lo que hace la
+/// prueba fiable con otros tests en marcha, que tambien lanzan sus procesos.
+fn process_is_running(system_id: u32) -> bool {
+    let output = std::process::Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {system_id}"), "/NH"])
+        .output()
+        .expect("tasklist se ejecuta");
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .any(|line| line.contains(&system_id.to_string()))
+}
+
+/// Espera a que el proceso `system_id` desaparezca del sistema.
+///
+/// Pedir la muerte no la borra de la lista en el acto: hay un momento en el que
+/// el proceso ya no se puede matar mas pero sigue apareciendo. Preguntar una sola
+/// vez daria un falso fallo, asi que se pregunta un rato.
+fn wait_until_gone(system_id: u32) -> bool {
+    for _ in 0..40 {
+        if !process_is_running(system_id) {
+            return true;
+        }
+
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    false
+}
+
+#[test]
+#[ignore = "requires JDK: compila y ejecuta de verdad la aplicacion generada"]
+fn a_compiled_java_project_can_be_launched_and_stays_registered() {
+    use miniide::build::build_with;
+    use miniide::runtime::{ProcessRegistry, ProcessState};
+    use miniide::toolchain::{JdkToolchain, ToolchainProvider};
+
+    let tree = TempTree::new("run-java");
+    let root = tree.root().join("App");
+    let project = create_project(ProjectType::JavaSwing, &root).unwrap();
+
+    let built = build_with(&JdkToolchain, &project).unwrap();
+    assert!(
+        built.succeeded(),
+        "el proyecto generado no compila:\n{}\n{}",
+        built.output().standard_output(),
+        built.output().standard_error()
+    );
+
+    let invocation = JdkToolchain.run_invocation(&project).unwrap();
+    let mut registry = ProcessRegistry::new();
+    let id = registry.spawn(&invocation).expect("la aplicacion arranca");
+
+    // Una ventana de Swing se queda viva hasta que se para: si el proceso
+    // termina solo, la ejecucion no ha servido de nada.
+    std::thread::sleep(Duration::from_secs(5));
+
+    let state = registry
+        .get_mut(id)
+        .expect("el proceso sigue registrado")
+        .result()
+        .state();
+
+    assert_eq!(
+        state,
+        ProcessState::Running,
+        "la aplicacion Java no se queda viva"
+    );
+
+    // Parar el proceso no puede cerrar MiniIDE, y el proceso se queda registrado
+    // con su estado. La parada es de `ProcessRegistry`, igual para cualquier
+    // lenguaje. Si la parada deja algo vivo, se limpia para no dejar ventanas en
+    // la pantalla de quien ejecuta los tests.
+    let stopped = registry.stop(id);
+    let system_id = registry.get(id).expect("registrado").system_id();
+
+    stopped.unwrap();
+    kill_process_tree(system_id);
+    assert_eq!(registry.len(), 1, "el proceso sigue registrado tras parar");
+    assert_eq!(
+        registry
+            .get_mut(id)
+            .expect("sigue registrado")
+            .result()
+            .state(),
+        ProcessState::Stopped
+    );
+}
+
+#[test]
+#[ignore = "requires JDK: para de verdad la aplicacion Java generada"]
+fn a_running_java_application_can_be_stopped_without_closing_miniide() {
+    use miniide::build::build_with;
+    use miniide::runtime::{ProcessId, ProcessRegistry, ProcessState};
+    use miniide::toolchain::{JdkToolchain, ToolchainProvider};
+
+    let tree = TempTree::new("stop-java");
+    let root = tree.root().join("App");
+    let project = create_project(ProjectType::JavaSwing, &root).unwrap();
+
+    let built = build_with(&JdkToolchain, &project).unwrap();
+    assert!(built.succeeded(), "{}", built.output().standard_error());
+
+    let invocation = JdkToolchain.run_invocation(&project).unwrap();
+    let mut registry = ProcessRegistry::new();
+    let id = registry.spawn(&invocation).expect("la aplicacion arranca");
+    let system_id = registry.get(id).expect("registrado").system_id();
+
+    // Se le da tiempo a la JVM a arrancar, para parar una aplicacion en marcha y
+    // no un proceso que todavia no ha hecho nada.
+    std::thread::sleep(Duration::from_secs(2));
+    registry.stop(id).expect("la aplicacion se detiene");
+
+    assert_eq!(
+        registry
+            .get_mut(id)
+            .expect("sigue registrado")
+            .result()
+            .state(),
+        ProcessState::Stopped,
+        "parar una aplicacion Java no la puede dejar como fallida"
+    );
+    assert_eq!(
+        registry.len(),
+        1,
+        "el proceso se queda registrado tras parar"
+    );
+
+    // El registro dice que lo ha parado MiniIDE, que no es lo mismo que decir
+    // que el proceso ha muerto: si solo se matara el lanzador del PATH, el JVM de
+    // verdad se quedaria vivo con su ventana. Aqui no se ayuda con un `taskkill`
+    // a mano: tiene que haberlo hecho MiniIDE.
+    assert!(
+        wait_until_gone(system_id),
+        "el proceso {system_id} sigue vivo en el sistema"
+    );
+
+    // Parar dos veces no puede ser un error: es lo que pasa si el usuario pulsa
+    // Detener otra vez, y no puede ser un cierre del IDE.
+    assert!(registry.stop(id).is_ok(), "parar dos veces no puede fallar");
+
+    // Y el registro sigue respondiendo: MiniIDE no se ha quedado sin el proceso
+    // que era suyo.
+    assert!(registry.stop(ProcessId::new(999)).is_err());
+}
+
 #[test]
 #[ignore = "requires .NET SDK"]
 fn a_compiled_csharp_project_can_be_launched_and_stays_registered() {
     use miniide::build::build_with;
     use miniide::runtime::ProcessRegistry;
     use miniide::toolchain::{DotNetToolchain, ToolchainProvider};
-
     let tree = TempTree::new("run-csharp");
     let root = tree.root().join("App");
     let project = create_project(ProjectType::CSharpWinForms, &root).unwrap();
 
     let built = build_with(&DotNetToolchain, &project).unwrap();
-    assert!(built.succeeded(), "{}", built.standard_output());
+    assert!(built.succeeded(), "{}", built.output().standard_output());
 
     let invocation = DotNetToolchain.run_invocation(&project).unwrap();
     let mut registry = ProcessRegistry::new();

@@ -22,7 +22,7 @@
 
 ## Fase 0 — Preparación
 
-- [ ] **FE-001 — Fijar stack del frontend**
+- [x] **FE-001 — Fijar stack del frontend**
   - RF: RNF-01, RNF-02
   - Definir egui/eframe como stack oficial del frontend.
   - Hecho cuando: la documentación del frontend declara egui/eframe y no existe otro toolkit de UI para el MVP.

@@ -495,6 +495,18 @@ No introducir concurrencia compleja sin necesidad.
 
 # 17. Interfaz de usuario
 
+El stack de la interfaz está decidido y no se vuelve a abrir dentro de una tarea:
+
+```text
+egui    → widgets, layout, interacción y rendering de la UI
+eframe  → ventana y ciclo de ejecución
+```
+
+Ninguna otra librería de UI para el MVP. La interfaz se construye en Rust, vive
+fuera del core y no es la fuente de verdad de nada: consume el core y le emite
+comandos. La decisión y su alternativa están en `docs/frontend-plan.md` (FD-01 y
+FD-03) y las tareas en `docs/frontend-tasks.md`.
+
 La UI debe priorizar:
 
 * Claridad.

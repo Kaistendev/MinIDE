@@ -25,7 +25,7 @@ use crate::runtime::ProcessOutput;
 pub fn parse(output: &ProcessOutput, root: &Path) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
-    for line in output.standard_output.lines() {
+    for line in output.standard_output().lines() {
         let line = line.trim_end();
 
         if let Some(diagnostic) = parse_line(line, root) {
@@ -192,14 +192,7 @@ mod tests {
     const REAL_ERROR: &str = "C:\\proyectos\\App\\Form1.cs(3,30): error CS0246: El nombre del tipo o del espacio de nombres 'Form' no se encontró (¿falta una directiva using o una referencia de ensamblado?) [C:\\proyectos\\App\\App.csproj]";
 
     fn parse_one(line: &str) -> Diagnostic {
-        let diagnostics = parse(
-            &ProcessOutput {
-                exit_code: Some(1),
-                standard_output: line.to_string(),
-                standard_error: String::new(),
-            },
-            &root(),
-        );
+        let diagnostics = parse(&ProcessOutput::new(Some(1), line.to_string(), ""), &root());
 
         assert_eq!(diagnostics.len(), 1, "se esperaba un diagnostico");
 
@@ -324,11 +317,7 @@ mod tests {
         let output = "    0 Advertencia(s)\n    1 Errores\nTiempo transcurrido 00:00:01.73\n";
 
         let diagnostics = parse(
-            &ProcessOutput {
-                exit_code: Some(1),
-                standard_output: output.to_string(),
-                standard_error: String::new(),
-            },
+            &ProcessOutput::new(Some(1), output.to_string(), ""),
             &root(),
         );
 
@@ -340,11 +329,7 @@ mod tests {
         let output = "  Determinando los proyectos que se van a restaurar...\n  Se ha restaurado C:\\proyectos\\App\\App.csproj (en 256 ms).\n";
 
         let diagnostics = parse(
-            &ProcessOutput {
-                exit_code: Some(0),
-                standard_output: output.to_string(),
-                standard_error: String::new(),
-            },
+            &ProcessOutput::new(Some(0), output.to_string(), ""),
             &root(),
         );
 
@@ -357,14 +342,7 @@ mod tests {
             "{REAL_ERROR}\nC:\\proyectos\\App\\Form2.cs(9,5): error CS1002: falta punto y coma [C:\\proyectos\\App\\App.csproj]\n"
         );
 
-        let diagnostics = parse(
-            &ProcessOutput {
-                exit_code: Some(1),
-                standard_output: output,
-                standard_error: String::new(),
-            },
-            &root(),
-        );
+        let diagnostics = parse(&ProcessOutput::new(Some(1), output, ""), &root());
 
         assert_eq!(diagnostics.len(), 2);
         assert!(diagnostics[0].message().contains("CS0246"));
@@ -374,11 +352,7 @@ mod tests {
     #[test]
     fn a_compilation_without_errors_has_no_diagnostics() {
         let diagnostics = parse(
-            &ProcessOutput {
-                exit_code: Some(0),
-                standard_output: "  App -> C:\\proyectos\\App\\bin\\App.dll\n".to_string(),
-                standard_error: String::new(),
-            },
+            &ProcessOutput::new(Some(0), "  App -> C:\\proyectos\\App\\bin\\App.dll\n", ""),
             &root(),
         );
 
@@ -401,11 +375,7 @@ mod tests {
     #[test]
     fn the_stderr_of_the_compiler_is_not_read_as_diagnostics() {
         let diagnostics = parse(
-            &ProcessOutput {
-                exit_code: Some(1),
-                standard_output: String::new(),
-                standard_error: format!("{REAL_ERROR}\n"),
-            },
+            &ProcessOutput::new(Some(1), "", format!("{REAL_ERROR}\n")),
             &root(),
         );
 

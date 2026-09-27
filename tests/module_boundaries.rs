@@ -12,7 +12,7 @@ use miniide::language::{EditingConfiguration, LanguageProvider};
 use miniide::project::{
     BuildConfiguration, Project, ProjectFile, ProjectFileKind, ProjectRelativePath,
 };
-use miniide::runtime::{ProcessState, RunResult};
+use miniide::runtime::{ProcessOutput, ProcessState, RunResult};
 use miniide::supports::Supports;
 use miniide::toolchain::{Invocation, ToolchainProvider};
 use miniide::ui::UiState;
@@ -138,10 +138,7 @@ fn a_build_result_carries_the_diagnostics_of_a_failed_compilation() {
         TextPosition::new(11, 4),
     );
     let result = BuildResult::new(
-        false,
-        Some(1),
-        "",
-        "Build FAILED.",
+        ProcessOutput::new(Some(1), "", "Build FAILED."),
         vec![Diagnostic::new(
             DiagnosticLevel::Error,
             "CS1002: ; expected",
@@ -150,8 +147,8 @@ fn a_build_result_carries_the_diagnostics_of_a_failed_compilation() {
     );
 
     assert!(!result.succeeded());
-    assert_eq!(result.exit_code(), Some(1));
-    assert_eq!(result.standard_error(), "Build FAILED.");
+    assert_eq!(result.output().exit_code(), Some(1));
+    assert_eq!(result.output().standard_error(), "Build FAILED.");
     assert_eq!(result.diagnostics().len(), 1);
     assert_eq!(result.diagnostics()[0].level(), DiagnosticLevel::Error);
     assert_eq!(result.diagnostics()[0].location(), Some(&location));
@@ -161,16 +158,14 @@ fn a_build_result_carries_the_diagnostics_of_a_failed_compilation() {
 fn a_finished_run_reports_its_state_exit_code_and_output() {
     let result = RunResult::new(
         ProcessState::Exited,
-        Some(3),
-        "iniciando...",
-        "principal no encontrada",
+        ProcessOutput::new(Some(3), "iniciando...", "principal no encontrada"),
         None,
     );
 
     assert_eq!(result.state(), ProcessState::Exited);
-    assert_eq!(result.exit_code(), Some(3));
-    assert_eq!(result.standard_output(), "iniciando...");
-    assert_eq!(result.standard_error(), "principal no encontrada");
+    assert_eq!(result.output().exit_code(), Some(3));
+    assert_eq!(result.output().standard_output(), "iniciando...");
+    assert_eq!(result.output().standard_error(), "principal no encontrada");
     assert_eq!(result.error(), None);
 }
 
@@ -575,6 +570,8 @@ fn a_file_is_associated_with_its_language_from_outside_the_crate() {
     assert_eq!(csharp.id(), LanguageId::CSharp);
     assert_eq!(csharp.editing().line_comment(), Some("//"));
     assert_eq!(java.id(), LanguageId::Java);
+    assert_eq!(java.editing().line_comment(), Some("//"));
+    assert_eq!(java.editing().block_comment(), Some(("/*", "*/")));
     assert!(supports.language_for(Path::new("notas.txt")).is_none());
 }
 

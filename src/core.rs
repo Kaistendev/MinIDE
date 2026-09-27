@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::error::Error;
 use std::fmt;
 use std::io;
@@ -17,6 +18,14 @@ pub enum CoreError {
     MalformedSource(String),
     /// El sistema de archivos ha rechazado la operacion.
     Io(String),
+    /// Un fallo de MiniIDE que no se esperaba y que el usuario no ha podido
+    /// provocar.
+    ///
+    /// Es el unico que no describe un problema del proyecto ni del sistema, y por eso
+    /// va aparte: no se corrige mirando el codigo del usuario ni el disco, sino el de
+    /// MiniIDE. Va separado para que no se confunda con los demas al contar que ha
+    /// fallado y de donde.
+    Internal(String),
 }
 
 impl CoreError {
@@ -33,6 +42,36 @@ impl CoreError {
         }
     }
 
+    /// Convierte lo que lleva un panic en el error del core que lo describe.
+    ///
+    /// Un panic nunca deberia llegar aqui: es un fallo del propio MiniIDE, no algo
+    /// que el usuario pueda haber hecho. Pero si llega, tiene que volver por el camino
+    /// normal de los errores y no hundir el hilo en el que ocurre, o el IDE se
+    /// quedaria sin poder hacer nada con el fallo.
+    ///
+    /// El texto del panic se enseña dentro del mensaje y no suelto, porque el
+    /// usuario necesita ver que ha pasado y porque asi se puede buscar despues. No
+    /// lleva mas contexto que este: quien recoge el panic sabe en que parte del
+    /// trabajo ha ocurrido, y anadirlo aqui seria suponerlo.
+    ///
+    /// Lo que lleva el panic se toma en propiedad, y no por referencia, porque es lo
+    /// que entrega `catch_unwind` y porque borrowed ahi no encuentra el tipo: sobre
+    /// una referencia el downcast da que no hay detalle y el fallo se queda sin decir
+    /// nada, que es justo lo que no puede pasar.
+    pub fn from_panic(panic: Box<dyn Any + Send>) -> Self {
+        let detail = panic
+            .downcast_ref::<&str>()
+            .map(|text| (*text).to_string())
+            .or_else(|| panic.downcast_ref::<String>().cloned());
+
+        match detail {
+            Some(detail) => Self::Internal(format!("fallo inesperado del IDE: {detail}")),
+            // Un panic puede no decir nada. El error sigue teniendo que decir algo,
+            // porque un mensaje vacio no se puede enseñar ni buscar.
+            None => Self::Internal("fallo inesperado del IDE, sin detalle".to_string()),
+        }
+    }
+
     pub fn message(&self) -> &str {
         match self {
             CoreError::InvalidName(value)
@@ -42,7 +81,8 @@ impl CoreError {
             | CoreError::Unsupported(value)
             | CoreError::AlreadyExists(value)
             | CoreError::MalformedSource(value)
-            | CoreError::Io(value) => value,
+            | CoreError::Io(value)
+            | CoreError::Internal(value) => value,
         }
     }
 }
@@ -58,6 +98,7 @@ impl fmt::Display for CoreError {
             CoreError::AlreadyExists(_) => "already exists",
             CoreError::MalformedSource(_) => "malformed source",
             CoreError::Io(_) => "io error",
+            CoreError::Internal(_) => "internal error",
         };
 
         write!(f, "{label}: {}", self.message())
@@ -349,5 +390,55 @@ mod tests {
         let result: CoreResult<u8> = Err(CoreError::Unsupported("WPF".to_string()));
 
         assert_eq!(result, Err(CoreError::Unsupported("WPF".to_string())));
+    }
+
+    /// Un fallo que MiniIDE no esperaba es un fallo interno, y como tal se
+    /// clasifica: no es ni un problema del usuario ni del disco ni de la
+    /// herramienta, y mezclarlo con ellos haria que se corrigiera lo que no toca.
+    #[test]
+    fn an_unexpected_failure_is_classified_as_internal() {
+        let panic: Box<dyn std::any::Any + Send> = Box::new("la toolchain ha fallado por dentro");
+
+        let error = CoreError::from_panic(panic);
+
+        assert_eq!(
+            error,
+            CoreError::Internal(
+                "fallo inesperado del IDE: la toolchain ha fallado por dentro".to_string()
+            )
+        );
+        assert_eq!(
+            error.to_string(),
+            "internal error: fallo inesperado del IDE: la toolchain ha fallado por dentro"
+        );
+    }
+
+    /// Un panic puede no decir nada, y tampoco por eso puede quedar un error sin
+    /// texto: un mensaje vacio no se puede enseñar ni buscar.
+    #[test]
+    fn an_unexpected_failure_without_detail_still_has_a_message() {
+        let panic: Box<dyn std::any::Any + Send> = Box::new(7_u8);
+
+        let error = CoreError::from_panic(panic);
+
+        assert_eq!(
+            error,
+            CoreError::Internal("fallo inesperado del IDE, sin detalle".to_string())
+        );
+        assert!(!error.message().is_empty());
+    }
+
+    /// Un panic cuyo texto viene en un `String` se enseña igual que si viniera
+    /// prestado: los dos son el caso de verdad, y el segundo es el que se ve.
+    #[test]
+    fn an_unexpected_failure_can_carry_an_owned_message() {
+        let panic: Box<dyn std::any::Any + Send> = Box::new(String::from("indice fuera de rango"));
+
+        let error = CoreError::from_panic(panic);
+
+        assert_eq!(
+            error.message(),
+            "fallo inesperado del IDE: indice fuera de rango"
+        );
     }
 }

@@ -7,9 +7,12 @@ use crate::project::Project;
 use crate::runtime::ProcessOutput;
 
 mod dotnet;
+mod javac;
+mod jdk;
 mod msbuild;
 
 pub use dotnet::{DotNetSdk, DotNetToolchain};
+pub use jdk::{Jdk, JdkStatus, JdkToolchain};
 
 /// Directorios de `path`, sin entradas vacias.
 ///
@@ -105,7 +108,12 @@ impl Invocation {
 /// El proveedor prepara la llamada; no la ejecuta. Asi el core no depende de
 /// como se compila cada plataforma, y el lancement, la captura de salida y la
 /// parada del proceso quedan en un solo sitio.
-pub trait ToolchainProvider {
+///
+/// Exige `Send` y `Sync` porque una toolchain acaba usandose desde el hilo que
+/// compila y desde el que lanza el proceso, que no son el mismo. Sin eso no
+/// podria ir en un `Arc` ni pasar a un hilo de trabajo, y el trabajo largo
+/// quedaria atado al hilo de la interfaz.
+pub trait ToolchainProvider: Send + Sync {
     /// Proyecto que compila y ejecuta este proveedor. Es lo que permite elegir
     /// proveedor a partir del proyecto.
     fn project_type(&self) -> ProjectType;
@@ -115,6 +123,19 @@ pub trait ToolchainProvider {
 
     /// Si la herramienta esta disponible en el sistema.
     fn is_available(&self) -> bool;
+
+    /// Lo que se le dice al usuario cuando la herramienta no esta.
+    ///
+    /// Por defecto basta con el nombre de la herramienta, que ya dice lo que
+    /// falta. Una toolchain que sepa mas de como se busca —que es el caso de la
+    /// del JDK, que necesita el compilador en el PATH— lo dice aqui en vez de
+    /// dejar que el core lo adivine.
+    fn missing_message(&self) -> String {
+        format!(
+            "no se ha encontrado {} en este equipo. Instalalo y vuelve a compilar.",
+            self.tool()
+        )
+    }
 
     /// Prepara la llamada que compila `project`, con la configuracion de
     /// compilacion que tenga el proyecto.
@@ -234,6 +255,18 @@ mod tests {
     fn the_availability_of_the_tool_comes_from_the_provider() {
         assert!(FakeToolchain::dotnet().is_available());
         assert!(!FakeToolchain::jdk().is_available());
+    }
+
+    /// El mensaje por defecto tiene que decir que falta y que hacer: con solo el
+    /// nombre de la herramienta no hay forma de arreglarlo.
+    #[test]
+    fn a_toolchain_that_is_missing_says_what_to_do() {
+        let dotnet = FakeToolchain::dotnet();
+
+        let message = dotnet.missing_message();
+
+        assert!(message.contains(".NET SDK"), "{message}");
+        assert!(message.contains("Instalalo"), "{message}");
     }
 
     #[test]

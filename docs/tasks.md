@@ -329,57 +329,57 @@
 
 ---
 
-# Fase 7 — Java + Swing (Pendiente por implementar)
+# Fase 7 — Java + Swing
 
-- [ ] **T-066 — Implementar detección del JDK**  
+- [x] **T-066 — Implementar detección del JDK**  
   **RF:** RF-09, RF-16  
   **Hecho cuando:** el IDE puede detectar disponibilidad, versión y ubicación del JDK o informar que falta.
 
-- [ ] **T-067 — Crear template Java Swing**  
+- [x] **T-067 — Crear template Java Swing**  
   **RF:** RF-06, RF-09, RF-10  
   **Hecho cuando:** Nuevo proyecto genera una estructura mínima válida de Java Swing.
 
-- [ ] **T-068 — Implementar soporte de extensiones Java**  
+- [x] **T-068 — Implementar soporte de extensiones Java**  
   **RF:** RF-09  
   **Hecho cuando:** `.java` se asocia automáticamente con Java y usa su configuración de edición.
 
-- [ ] **T-069 — Implementar build Java mediante JDK**  
+- [x] **T-069 — Implementar build Java mediante JDK**  
   **RF:** RF-09, RF-11  
   **Hecho cuando:** un proyecto Java válido puede compilarse desde MiniIDE y devuelve un `BuildResult` normalizado.
 
-- [ ] **T-070 — Implementar parseo básico de errores Java**  
+- [x] **T-070 — Implementar parseo básico de errores Java**  
   **RF:** RF-11, RF-13  
   **Hecho cuando:** errores de compilación Java se convierten en `Diagnostic` con posición cuando sea posible.
 
-- [ ] **T-071 — Implementar ejecución Java**  
+- [x] **T-071 — Implementar ejecución Java**  
   **RF:** RF-09, RF-12  
   **Hecho cuando:** un proyecto Java compilable puede ejecutarse desde MiniIDE y su proceso queda registrado.
 
-- [ ] **T-072 — Implementar detención de proceso Java**  
+- [x] **T-072 — Implementar detención de proceso Java**  
   **RF:** RF-12, RF-13  
   **Hecho cuando:** una aplicación Java iniciada por MiniIDE puede detenerse sin cerrar el IDE.
 
-- [ ] **T-073 — Crear modelo visual Swing mínimo**  
+- [x] **T-073 — Crear modelo visual Swing mínimo**  
   **RF:** RF-10  
   **Hecho cuando:** el modelo puede representar JFrame y los componentes JButton, JLabel, JTextField y JPanel.
 
-- [ ] **T-074 — Implementar selección y movimiento en diseñador Swing**  
+- [x] **T-074 — Implementar selección y movimiento en diseñador Swing**  
   **RF:** RF-10  
   **Hecho cuando:** un componente puede seleccionarse, moverse y redimensionarse dentro de la ventana.
 
-- [ ] **T-075 — Implementar panel de propiedades Swing**  
+- [x] **T-075 — Implementar panel de propiedades Swing**  
   **RF:** RF-10  
   **Hecho cuando:** las propiedades básicas soportadas pueden editarse y reflejarse en el modelo.
 
-- [ ] **T-076 — Implementar generador Swing mínimo**  
+- [x] **T-076 — Implementar generador Swing mínimo**  
   **RF:** RF-10, RF-11  
   **Hecho cuando:** el modelo visual genera código Java Swing válido para una ventana mínima.
 
-- [ ] **T-077 — Proteger regiones de código generado Swing**  
+- [x] **T-077 — Proteger regiones de código generado Swing**  
   **RF:** RF-10, RF-11  
   **Hecho cuando:** regenerar el diseño no elimina código manual fuera de la región administrada.
 
-- [ ] **T-078 — Integration test Java Swing end-to-end**  
+- [x] **T-078 — Integration test Java Swing end-to-end**  
   **RF:** RF-06, RF-09, RF-10, RF-11, RF-12, RF-16  
   **Hecho cuando:** un test crea proyecto, genera UI mínima, compila y ejecuta una aplicación Java Swing real cuando el JDK está disponible.
 
@@ -387,27 +387,27 @@
 
 # Fase 8 — Diagnósticos, salida y robustez
 
-- [ ] **T-079 — Centralizar salida de procesos**  
+- [x] **T-079 — Centralizar salida de procesos**  
   **RF:** RF-12, RF-13  
   **Hecho cuando:** build/run entregan stdout, stderr y código de salida mediante una estructura común.
 
-- [ ] **T-080 — Mejorar panel de diagnósticos**  
+- [x] **T-080 — Mejorar panel de diagnósticos**  
   **RF:** RF-11, RF-13, RF-16  
   **Hecho cuando:** el usuario puede ver errores y advertencias agrupados y acceder al archivo/línea cuando existe.
 
-- [ ] **T-081 — Manejar toolchain ausente**  
+- [x] **T-081 — Manejar toolchain ausente**  
   **RF:** RF-11, RF-16  
   **Hecho cuando:** intentar compilar sin .NET/JDK produce un diagnóstico claro y el IDE permanece operativo.
 
-- [ ] **T-082 — Aislar tareas largas de la UI**  
+- [x] **T-082 — Aislar tareas largas de la UI**  
   **RF:** RF-11, RF-12, RF-13  
   **Hecho cuando:** compilar o ejecutar no congela la ventana y el resultado llega de forma asíncrona.
 
-- [ ] **T-083 — Añadir cancelación/detención robusta**  
+- [x] **T-083 — Añadir cancelación/detención robusta**  
   **RF:** RF-12  
   **Hecho cuando:** un proceso activo puede detenerse y el estado del IDE vuelve correctamente a inactivo.
 
-- [ ] **T-084 — Añadir manejo de errores inesperados**  
+- [x] **T-084 — Añadir manejo de errores inesperados**  
   **RF:** RF-01, RF-11, RF-12, RF-16  
   **Hecho cuando:** fallos de filesystem, proceso o toolchain no cierran inesperadamente el IDE.
 

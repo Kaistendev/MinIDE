@@ -1,9 +1,24 @@
 use crate::core::{CoreError, CoreResult};
 
 /// El generador de un framework concreto.
+mod swing;
 mod winforms;
+pub use swing::{SwingGenerator, BUILD_METHOD};
+pub use winforms::WinFormsGenerator;
 
-pub use winforms::{WinFormsGenerator, MARKER_BEGIN, MARKER_END};
+/// Marcador con el que empieza la zona que escribe MiniIDE en el archivo del
+/// disenador.
+///
+/// Vive aqui y no en la plantilla porque es el generador quien decide donde
+/// escribe, y los dos tienen que usar el mismo texto: si no, el generador
+/// escribiria una zona que la plantilla no tiene.
+///
+/// El mismo texto sirve para los dos generadores porque `//` es un comentario
+/// tanto en C# como en Java.
+pub const MARKER_BEGIN: &str = "// <MiniIDE>";
+
+/// Marcador con el que termina la zona que escribe MiniIDE.
+pub const MARKER_END: &str = "// </MiniIDE>";
 
 /// La ventana o el formulario raiz del disenador.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -171,6 +186,18 @@ impl DesignerComponent {
             Some("false") => false,
             _ => default_value,
         }
+    }
+}
+
+/// Un booleano como lo escribe el toolkit: en minusculas y como texto.
+///
+/// Los dos toolkit lo escriben igual, asi que es una regla del modelo y no de un
+/// framework: C# y Java ponen `true` y `false`.
+pub fn flag(value: bool) -> &'static str {
+    if value {
+        "true"
+    } else {
+        "false"
     }
 }
 

@@ -1,9 +1,10 @@
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::core::{FrameworkId, LanguageId, ProjectType};
 use crate::framework::{FrameworkCapabilities, FrameworkProvider};
 use crate::language::{EditingConfiguration, LanguageProvider};
-use crate::toolchain::{DotNetToolchain, ToolchainProvider};
+use crate::toolchain::{DotNetToolchain, JdkToolchain, ToolchainProvider};
 
 /// Soporte de C#.
 pub struct CSharp;
@@ -89,7 +90,7 @@ impl FrameworkProvider for Swing {
 pub struct Supports {
     languages: Vec<Box<dyn LanguageProvider>>,
     frameworks: Vec<Box<dyn FrameworkProvider>>,
-    toolchains: Vec<Box<dyn ToolchainProvider>>,
+    toolchains: Vec<Arc<dyn ToolchainProvider>>,
 }
 
 impl Supports {
@@ -106,7 +107,8 @@ impl Supports {
         supports.register_language(Box::new(Java));
         supports.register_framework(Box::new(WinForms));
         supports.register_framework(Box::new(Swing));
-        supports.register_toolchain(Box::new(DotNetToolchain));
+        supports.register_toolchain(Arc::new(DotNetToolchain));
+        supports.register_toolchain(Arc::new(JdkToolchain));
 
         supports
     }
@@ -131,7 +133,7 @@ impl Supports {
 
     /// Registra una toolchain. Si ya habia una para el mismo tipo de proyecto,
     /// la ultima registrada la sustituye.
-    pub fn register_toolchain(&mut self, toolchain: Box<dyn ToolchainProvider>) {
+    pub fn register_toolchain(&mut self, toolchain: Arc<dyn ToolchainProvider>) {
         let project_type = toolchain.project_type();
 
         self.toolchains
@@ -141,12 +143,18 @@ impl Supports {
 
     /// Toolchain registrada para ese tipo de proyecto, si la hay.
     ///
-    /// Java todavia no tiene toolchain, asi que se devuelve `None` para ella.
-    pub fn toolchain(&self, project_type: ProjectType) -> Option<&dyn ToolchainProvider> {
+    /// La hay para los dos tipos de proyecto soportados: el .NET SDK para C# y el
+    /// JDK para Java. Que este registrada no quiere decir que la herramienta este
+    /// instalada; de eso responde `is_available`.
+    ///
+    /// Se lleva en un `Arc` y se devuelve clones del mismo, y no una referencia
+    /// porque hay que poder llevarsela a un hilo: compilar y ejecutar tardan, y
+    /// ese trabajo no puede quedarse en el hilo que pregunta.
+    pub fn toolchain(&self, project_type: ProjectType) -> Option<Arc<dyn ToolchainProvider>> {
         self.toolchains
             .iter()
             .find(|toolchain| toolchain.project_type() == project_type)
-            .map(|toolchain| toolchain.as_ref())
+            .map(Arc::clone)
     }
 
     /// Toolchains registradas, en orden de registro.
@@ -214,6 +222,7 @@ mod tests {
     use crate::framework::{FrameworkCapabilities, FrameworkProvider};
     use crate::language::{EditingConfiguration, LanguageProvider};
     use crate::supports::Supports;
+    use crate::toolchain::Jdk;
 
     #[test]
     fn the_initial_supports_have_csharp() {
@@ -275,6 +284,57 @@ mod tests {
                 "{project_type:?} no tiene framework"
             );
         }
+    }
+
+    /// Cada plataforma soportada tiene su toolchain, o el core no puede compilar
+    /// un proyecto que el propio IDE deja crear.
+    #[test]
+    fn every_supported_project_type_has_the_toolchain_that_builds_it() {
+        let supports = Supports::initial();
+
+        for project_type in ProjectType::ALL {
+            let toolchain = supports
+                .toolchain(project_type)
+                .unwrap_or_else(|| panic!("{project_type} no tiene toolchain"));
+
+            assert_eq!(toolchain.project_type(), project_type);
+        }
+    }
+
+    #[test]
+    fn a_csharp_project_is_built_with_the_dotnet_sdk() {
+        let supports = Supports::initial();
+
+        let toolchain = supports
+            .toolchain(ProjectType::CSharpWinForms)
+            .expect("C# tiene toolchain");
+
+        assert_eq!(toolchain.tool(), ".NET SDK");
+    }
+
+    #[test]
+    fn a_java_project_is_built_with_the_jdk() {
+        let supports = Supports::initial();
+
+        let toolchain = supports
+            .toolchain(ProjectType::JavaSwing)
+            .expect("Java tiene toolchain");
+
+        assert_eq!(toolchain.tool(), "JDK");
+        assert_eq!(toolchain.project_type(), ProjectType::JavaSwing);
+    }
+
+    /// La disponibilidad la decide la deteccion del JDK, no el registro: registrar
+    /// la toolchain no la instala.
+    #[test]
+    fn the_availability_of_the_java_toolchain_comes_from_the_jdk_detection() {
+        let supports = Supports::initial();
+
+        let toolchain = supports
+            .toolchain(ProjectType::JavaSwing)
+            .expect("Java tiene toolchain");
+
+        assert_eq!(toolchain.is_available(), Jdk::detect().is_some());
     }
 
     #[test]
@@ -574,6 +634,32 @@ mod tests {
                 .language_for(Path::new("src/Main.java"))
                 .unwrap()
                 .id(),
+            LanguageId::Java
+        );
+    }
+
+    /// La configuracion de edicion no se elige en el editor: la da el lenguaje al
+    /// que el archivo pertenece. Un `.java` tiene que dar la de Java.
+    #[test]
+    fn a_java_file_hands_over_the_editing_configuration_of_java() {
+        let supports = initial();
+
+        let editing = supports
+            .language_for(Path::new("src/main/java/Main.java"))
+            .expect("un archivo .java es de Java")
+            .editing();
+
+        assert_eq!(editing.line_comment(), Some("//"));
+        assert_eq!(editing.block_comment(), Some(("/*", "*/")));
+        assert_eq!(editing.indent(), "    ");
+    }
+
+    #[test]
+    fn the_java_association_ignores_the_case_of_the_extension() {
+        let supports = initial();
+
+        assert_eq!(
+            supports.language_for(Path::new("MAIN.JAVA")).unwrap().id(),
             LanguageId::Java
         );
     }

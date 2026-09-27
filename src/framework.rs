@@ -3,6 +3,10 @@ use crate::core::FrameworkId;
 /// Lo que WinForms puede hacer en el disenador.
 mod winforms;
 
+/// Lo que Swing puede hacer en el disenador.
+mod swing;
+
+pub use swing::SwingModel;
 pub use winforms::WinFormsModel;
 
 /// Lo que el core puede consultar de un framework sin saber cual es.

@@ -1,6 +1,6 @@
 use crate::core::{CoreError, CoreResult};
 use crate::framework::FrameworkProvider;
-use crate::generation::{DesignerComponent, DesignerModel, WindowSpec};
+use crate::generation::{flag, DesignerComponent, DesignerModel, WindowSpec};
 use crate::supports::WinForms;
 
 /// Propiedad de WinForms con el texto que se ve en el control.
@@ -11,15 +11,6 @@ const VISIBLE: &str = "Visible";
 
 /// Propiedad de WinForms con si el control responde.
 const ENABLED: &str = "Enabled";
-
-/// Un booleano como lo escribe Windows Forms: en minúsculas y como texto.
-fn flag(value: bool) -> &'static str {
-    if value {
-        "true"
-    } else {
-        "false"
-    }
-}
 
 /// Modelo visual de un formulario de Windows Forms.
 ///
