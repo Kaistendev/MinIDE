@@ -1,0 +1,30 @@
+[workspace]
+
+[package]
+name = "miniide"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "MiniIDE - IDE minimalista para Windows implementado en Rust"
+publish = false
+
+[lib]
+name = "miniide"
+path = "src/lib.rs"
+
+[[bin]]
+name = "miniide"
+path = "src/main.rs"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+
+[dependencies]
+
+[dev-dependencies]
