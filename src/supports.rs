@@ -21,6 +21,95 @@ impl LanguageProvider for CSharp {
     fn editing(&self) -> EditingConfiguration {
         EditingConfiguration::new(Some("//"), Some(("/*", "*/")), "    ")
     }
+
+    /// Las palabras clave de C#, sin mayusculas y sin punto y coma.
+    ///
+    /// Las de C# y no las de Java porque hay palabras que son de los dos -`class`,
+    /// `public`, `void`- y otras que no: `namespace` es de C# y `package` de Java. Una
+    /// lista con las de los dos dos haria que un archivo se resalte como si fuera del
+    /// otro.
+    fn keywords(&self) -> &'static [&'static str] {
+        &[
+            "abstract",
+            "as",
+            "base",
+            "bool",
+            "break",
+            "byte",
+            "case",
+            "catch",
+            "char",
+            "checked",
+            "class",
+            "const",
+            "continue",
+            "decimal",
+            "default",
+            "delegate",
+            "do",
+            "double",
+            "else",
+            "enum",
+            "event",
+            "explicit",
+            "extern",
+            "false",
+            "finally",
+            "fixed",
+            "float",
+            "for",
+            "foreach",
+            "goto",
+            "if",
+            "implicit",
+            "in",
+            "int",
+            "interface",
+            "internal",
+            "is",
+            "lock",
+            "long",
+            "namespace",
+            "new",
+            "null",
+            "object",
+            "operator",
+            "out",
+            "override",
+            "params",
+            "private",
+            "protected",
+            "public",
+            "readonly",
+            "ref",
+            "return",
+            "sbyte",
+            "sealed",
+            "short",
+            "sizeof",
+            "stackalloc",
+            "static",
+            "string",
+            "struct",
+            "switch",
+            "this",
+            "throw",
+            "true",
+            "try",
+            "typeof",
+            "uint",
+            "ulong",
+            "unchecked",
+            "unsafe",
+            "ushort",
+            "using",
+            "var",
+            "virtual",
+            "void",
+            "volatile",
+            "while",
+        ]
+    }
 }
 
 /// Soporte de Java.
@@ -37,6 +126,67 @@ impl LanguageProvider for Java {
 
     fn editing(&self) -> EditingConfiguration {
         EditingConfiguration::new(Some("//"), Some(("/*", "*/")), "    ")
+    }
+
+    /// Las palabras clave de Java, sin mayusculas y sin punto y coma.
+    ///
+    /// Las de Java y no las de C#: `package`, `import`, `extends` e `implements` son de
+    /// Java, y `namespace` y `var` son de C#, asi que un archivo de cada uno se resalta
+    /// distinto en esas palabras y parecido en las que tienen los dos.
+    fn keywords(&self) -> &'static [&'static str] {
+        &[
+            "abstract",
+            "assert",
+            "boolean",
+            "break",
+            "byte",
+            "case",
+            "catch",
+            "char",
+            "class",
+            "const",
+            "continue",
+            "default",
+            "do",
+            "double",
+            "else",
+            "enum",
+            "extends",
+            "final",
+            "finally",
+            "float",
+            "for",
+            "if",
+            "implements",
+            "import",
+            "instanceof",
+            "int",
+            "interface",
+            "long",
+            "native",
+            "new",
+            "null",
+            "package",
+            "private",
+            "protected",
+            "public",
+            "return",
+            "short",
+            "static",
+            "strictfp",
+            "super",
+            "switch",
+            "synchronized",
+            "this",
+            "throw",
+            "throws",
+            "transient",
+            "true",
+            "try",
+            "void",
+            "volatile",
+            "while",
+        ]
     }
 }
 
@@ -383,6 +533,10 @@ mod tests {
             fn editing(&self) -> EditingConfiguration {
                 EditingConfiguration::new(Some("//"), Some(("/*", "*/")), "  ")
             }
+
+            fn keywords(&self) -> &'static [&'static str] {
+                &["class"]
+            }
         }
 
         let mut supports = Supports::initial();
@@ -719,6 +873,10 @@ mod tests {
 
             fn editing(&self) -> EditingConfiguration {
                 EditingConfiguration::new(Some("#"), None, "\t")
+            }
+
+            fn keywords(&self) -> &'static [&'static str] {
+                &[]
             }
         }
 

@@ -16,8 +16,11 @@ use std::sync::Arc;
 
 use eframe::egui;
 
+use super::atajos;
 use super::icon::icono;
+use super::layout::layout;
 use super::ui_state::UiState;
+use crate::commands::Command;
 
 /// Titulo de la ventana.
 ///
@@ -65,13 +68,19 @@ pub fn opciones() -> eframe::NativeOptions {
 /// entre frames —qué panel está abierto, qué se está viendo, qué dice la barra de
 /// estado— necesita vivir en la aplicación, que es la misma para todos.
 ///
-/// Lo que lleva es estado visual y nada más. El texto de un documento, el proyecto o
+/// Lo que lleva es estado visual y lo que el usuario ha pedido, y nada más. El texto de un documento, el proyecto o
 /// el estado de una compilación no están aquí: se piden al core cuando hacen falta.
 /// Guardarlos sería tener dos verdades, y la copia se quedaría vieja sin que nadie se
 /// enterase.
 #[derive(Debug, Default)]
 pub struct App {
     estado: UiState,
+    /// Los comandos que el usuario ha pedido y que todavía no ha ejecutado nadie.
+    ///
+    /// Los deja [`Self::emitir`], que es el único sitio por el que se piden. Se guardan
+    /// porque hace falta un sitio al que lleguen: sin este campo la ventana los soltaría
+    /// al vacío y no habría forma de saber que se ha pulsado un botón.
+    peticiones: Vec<Command>,
 }
 
 impl App {
@@ -88,19 +97,52 @@ impl App {
     pub fn state_mut(&mut self) -> &mut UiState {
         &mut self.estado
     }
+
+    /// El único camino por el que un comando sale de la ventana.
+    ///
+    /// Todo lo que se pulsa pasa por aquí: el menú, la barra de herramientas y los atajos
+    /// de FE-029 a FE-033. Que haya un solo sitio del que salir es lo que evita que el
+    /// mismo nombre pida dos cosas distintas según por dónde se pulse, y lo que hace que
+    /// un atajo pueda ejecutar lo mismo que un botón sin escribir la operación dos veces.
+    ///
+    /// Hoy no ejecuta nada: la ventana todavía no tiene un core al que mandarle el
+    /// comando, y sin core no hay a quién preguntarle. Lo que hace es dejar el comando
+    /// escrito, que es la forma de que la operación no se pierda. Cuando el core llegue, se
+    /// llama aquí, y todo lo demás —el menú, la barra y los atajos— sigue igual porque nunca
+    /// supieron quién lo iba a ejecutar.
+    pub fn emitir(&mut self, comando: Command) {
+        self.peticiones.push(comando);
+    }
+
+    /// Dibuja la ventana y deja escritas las peticiones que se hayan hecho en ella.
+    pub fn dibujar(&mut self, ui: &mut egui::Ui) {
+        ventana(ui, self);
+    }
+
+    /// Lo que el usuario ha pedido desde la ventana y nadie ha ejecutado todavía.
+    pub fn peticiones(&self) -> &[Command] {
+        &self.peticiones
+    }
 }
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        ventana(ui);
+        self.dibujar(ui);
     }
 }
 
 /// Dibuja el contenido de la ventana.
-pub fn ventana(ui: &mut egui::Ui) {
-    egui::CentralPanel::default().show(ui, |ui| {
-        ui.heading(titulo());
-    });
+///
+/// Ahora es el layout raíz y nada más: las cuatro zonas de la ventana, cada una en su
+/// sitio. El contenido de cada zona lo pone su tarea -el menú, el editor, la salida, la
+/// barra de estado- y lo que va aquí es lo único que no depende de lo que haya dentro.
+///
+/// Recibe la aplicación y no un estado suelto porque las zonas pueden pedir cosas -FE-007,
+/// FE-006, FE-009- y la que recoge esas peticiones es la aplicación. Pasarle el estado
+/// visual obligaría a que cada zona tenga su propio sitio donde dejar lo que pide.
+pub fn ventana(ui: &mut egui::Ui, app: &mut App) {
+    atajos::manejar(ui, app);
+    layout(ui, app);
 }
 
 /// Abre la ventana y no vuelve hasta que se cierra.
@@ -133,7 +175,9 @@ mod tests {
     fn the_window_content_can_be_drawn_without_a_window() {
         let context = eframe::egui::Context::default();
 
-        let mut frame = context.run_ui(eframe::egui::RawInput::default(), ventana);
+        let mut frame = context.run_ui(eframe::egui::RawInput::default(), |ui| {
+            ventana(ui, &mut App::new());
+        });
 
         // egui avisa si se tiran sin aplicar las texturas que ha creado, y en una
         // aplicacion de verdad las aplica el renderizador. Aqui no hay renderizador,
@@ -225,6 +269,90 @@ mod tests {
         fn es_eframe_app<T: eframe::App>() {}
 
         es_eframe_app::<App>();
+    }
+
+    /// La aplicación guarda lo que el usuario pide, y no inventa peticiones.
+    ///
+    /// La aplicación recoge las peticiones y no las ejecuta todavía, y no las inventa: sin
+    /// un clic detrás no hay nada que recoger, y recoger algo por la espalda sería mandar
+    /// trabajo al core que el usuario no ha pedido.
+    #[test]
+    fn the_app_keeps_what_the_window_asks_for() {
+        let context = eframe::egui::Context::default();
+        let mut app = App::new();
+
+        let mut frame = context.run_ui(eframe::egui::RawInput::default(), |ui| {
+            app.dibujar(ui);
+        });
+        frame.textures_delta.clear();
+
+        assert!(
+            app.peticiones().is_empty(),
+            "una ventana en la que no se ha pulsado nada no pide nada: {:?}",
+            app.peticiones()
+        );
+    }
+
+    /// Los comandos de la ventana salen por un solo sitio.
+    ///
+    /// FE-009 pide un punto único, y lo que lo protege de volverse dos es que el menú y la
+    /// barra de herramientas usen el mismo. Se comprueba leyendo el código y no la ventana
+    /// porque la duplicación no se ve desde fuera: si el menú se dibujara sus propios
+    /// botones, los dos caminos pedirían lo mismo y los dos funcionarían, y el día que uno
+    /// cambiara el otro se quedaría atrás sin que nada lo notara.
+    #[test]
+    fn the_commands_of_the_window_leave_through_one_place() {
+        let frontend = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src")
+            .join("frontend");
+
+        let fuente = |archivo: &str| {
+            std::fs::read_to_string(frontend.join(archivo))
+                .unwrap_or_else(|error| panic!("{archivo} tiene que poder leerse: {error}"))
+        };
+
+        let define: Vec<String> = [
+            "acciones.rs",
+            "app.rs",
+            "icon.rs",
+            "layout.rs",
+            "explorador.rs",
+            "menu.rs",
+            "status.rs",
+            "atajos.rs",
+            "tabs.rs",
+            "toolbar.rs",
+            "ui_state.rs",
+        ]
+        .into_iter()
+        .filter(|archivo| fuente(archivo).contains("fn emitir"))
+        .map(String::from)
+        .collect();
+
+        assert_eq!(
+            define,
+            vec!["app.rs".to_owned()],
+            "`emitir` es el unico sitio por el que un comando sale de la ventana"
+        );
+
+        for consumidor in ["menu.rs", "toolbar.rs", "busqueda.rs"] {
+            assert!(
+                fuente(consumidor).contains("acciones::boton("),
+                "{consumidor} tiene que pedir por `acciones::boton`, que es el unico sitio donde un clic se convierte en un comando"
+            );
+        }
+
+        for consumidor in ["explorador.rs", "tabs.rs"] {
+            assert!(
+                fuente(consumidor).contains("app.emitir("),
+                "{consumidor} tiene que pedir por `App::emitir`, que es el unico sitio por el que un comando sale de la ventana"
+            );
+        }
+
+        assert!(
+            fuente("explorador.rs").contains("acciones::boton("),
+            "el explorador pide sus acciones por `acciones::boton` y el resto por `App::emitir`"
+        );
     }
 
     /// Cerrar la ventana cierra MiniIDE.

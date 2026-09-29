@@ -160,6 +160,35 @@ impl Selection {
         self.cursor.move_to(buffer, at);
     }
 
+    /// Mueve el cursor a la izquierda y descarta la seleccion.
+    ///
+    /// Y la descarta porque mover no es alargar: alargar la seleccion es lo que hace
+    /// `extend_to`, que es a donde va la seleccion mientras se pulsa Mayusculas. Si
+    /// moverse dejara la seleccion, cada flecha moveria el final de lo seleccionado y no
+    /// habria forma de escribir donde quiere uno.
+    pub fn move_left(&mut self, buffer: &TextBuffer) {
+        self.anchor = None;
+        self.cursor.move_left(buffer);
+    }
+
+    /// Véase [`Self::move_left`].
+    pub fn move_right(&mut self, buffer: &TextBuffer) {
+        self.anchor = None;
+        self.cursor.move_right(buffer);
+    }
+
+    /// Véase [`Self::move_left`].
+    pub fn move_up(&mut self, buffer: &TextBuffer) {
+        self.anchor = None;
+        self.cursor.move_up(buffer);
+    }
+
+    /// Véase [`Self::move_left`].
+    pub fn move_down(&mut self, buffer: &TextBuffer) {
+        self.anchor = None;
+        self.cursor.move_down(buffer);
+    }
+
     /// Mueve el cursor creando la seleccion si no habia, o alargandola si la
     /// habia. La ancla se queda donde estaba.
     pub fn extend_to(&mut self, buffer: &TextBuffer, at: TextPosition) {
@@ -376,6 +405,35 @@ impl Document {
     /// Mueve el cursor. No modifica el contenido.
     pub fn move_to(&mut self, at: TextPosition) {
         self.selection.move_to(&self.buffer, at);
+    }
+
+    /// Mueve el cursor una posicion a la izquierda. No modifica el contenido.
+    ///
+    /// Las cuatro direcciones estan en el documento y no en la ventana porque el
+    /// recorrido del cursor es logica del texto y no de pantalla: el final de una linea,
+    /// el principio de la siguiente y el recorte de la columna al cambiar de linea son
+    /// reglas del documento, y la ventana que las duplicara las tendria que mantener
+    /// igual que el core.
+    ///
+    /// Moverse nunca marca el documento: es lo que distingue mover de editar, y si no,
+    /// un paseo con las flechas dejaria el archivo con cambios sin guardar.
+    pub fn move_left(&mut self) {
+        self.selection.move_left(&self.buffer);
+    }
+
+    /// Mueve el cursor una posicion a la derecha. No modifica el contenido.
+    pub fn move_right(&mut self) {
+        self.selection.move_right(&self.buffer);
+    }
+
+    /// Mueve el cursor una linea arriba. No modifica el contenido.
+    pub fn move_up(&mut self) {
+        self.selection.move_up(&self.buffer);
+    }
+
+    /// Mueve el cursor una linea abajo. No modifica el contenido.
+    pub fn move_down(&mut self) {
+        self.selection.move_down(&self.buffer);
     }
 
     /// Selecciona de `first` a `second`, en el orden que sea. No modifica el
@@ -623,14 +681,26 @@ impl Tab {
     }
 }
 
-/// Los documentos abiertos, en el orden en que se abrieron.
+/// Los documentos abiertos, en el orden en que se abrieron, y cuál se está viendo.
 ///
 /// Una ruta solo puede estar abierta una vez: al abrir un documento que ya esta
 /// abierto se devuelve su pestaña en vez de crear otra, y se conservan sus
 /// cambios y su historial.
+///
+/// Ademas de la lista sabe cuál de las pestañas es la activa, que es el documento
+/// que se está viendo. No lo sapia antes, y T-027 lo dejo fuera a proposito por ser
+/// política y no estructura: que al abrir un documento se vea ese documento, y qué
+/// pasa con la activa cuando se cierra, son decisiones que hay que tomar a
+/// propósito, no un detalle que salga solo.
+///
+/// La activa se guarda como indice y no como ruta porque es lo que se devuelve al
+/// que la cambia, y quien la cambia -la ventana, al pulsar una pestaña- la cambia
+/// por sitio, no por nombre. El indice se mantiene al cerrar: ver
+/// [`Self::close`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OpenTabs {
     tabs: Vec<Tab>,
+    active: Option<usize>,
 }
 
 impl OpenTabs {
@@ -641,14 +711,47 @@ impl OpenTabs {
     /// Abre el documento de `path` con `text` y devuelve el indice de su
     /// pestaña. Si ya estaba abierto, devuelve ese mismo indice y no toca el
     /// documento.
+    ///
+    /// La pestaña que se abre queda activa, y la que ya estaba abierta tambien: abrir
+    /// un documento es pedir verlo, asi que lo que se acaba de pedir no puede
+    /// quedarse a la espalda de lo que ya se estaba viendo. Volver a abrir uno que ya
+    /// lo esta no crea una segunda pestaña: lo trae a delante.
     pub fn open(&mut self, path: DocumentPath, text: impl Into<String>) -> usize {
-        if let Some(index) = self.index_of(&path) {
-            return index;
+        let index = if let Some(index) = self.index_of(&path) {
+            index
+        } else {
+            self.tabs.push(Tab::new(path, Document::new(text)));
+
+            self.tabs.len() - 1
+        };
+
+        self.active = Some(index);
+
+        index
+    }
+
+    /// El indice de la pestaña que se está viendo, o `None` si no hay ninguna.
+    ///
+    /// No hay ninguna con pestañas cerradas todas, y no hay ninguna en una lista
+    /// vacía: un documento abierto siempre es el que se está viendo, asi que con
+    /// pestañas siempre hay una activa.
+    pub fn active(&self) -> Option<usize> {
+        self.active
+    }
+
+    /// Deja activa la pestaña del indice. Devuelve `false` si no hay esa pestaña.
+    ///
+    /// Es como [`Self::close`], que tambien devuelve `None` en vez de fallar: el
+    /// indice lo elige quien llama y puede estar equivocado, y una lista de
+    /// documentos no es el sitio donde se Avisa de un error de quien la usa.
+    pub fn activate(&mut self, index: usize) -> bool {
+        if index >= self.tabs.len() {
+            return false;
         }
 
-        self.tabs.push(Tab::new(path, Document::new(text)));
+        self.active = Some(index);
 
-        self.tabs.len() - 1
+        true
     }
 
     pub fn get(&self, index: usize) -> Option<&Tab> {
@@ -662,12 +765,29 @@ impl OpenTabs {
     /// Cierra la pestaña y la devuelve, para que quien la cierra pueda mirar si
     /// el documento tenia cambios sin guardar. Devuelve `None` si no habia
     /// ninguna pestaña en ese indice.
+    ///
+    /// Cerrar la activa no deja al usuario sin nada que ver, y aqui esta esa
+    /// politica: pasa a estar activa la pestaña que ocupa el sitio que ha quedado
+    /// libre, que es la siguiente, y si la que se cierra era la ultima, la nueva
+    /// ultima. Cerrar otra no cambia el documento que se está viendo, aunque la que
+    /// se cierre este antes: el indice se mueve con la lista y la activa se mueve
+    /// con el.
     pub fn close(&mut self, index: usize) -> Option<Tab> {
         if index >= self.tabs.len() {
             return None;
         }
 
-        Some(self.tabs.remove(index))
+        let closed = self.tabs.remove(index);
+
+        match self.active {
+            Some(active) if active == index => {
+                self.active = (!self.tabs.is_empty()).then(|| index.min(self.tabs.len() - 1));
+            }
+            Some(active) if active > index => self.active = Some(active - 1),
+            _ => {}
+        }
+
+        Some(closed)
     }
 
     /// Indice de la pestaña que tiene abierto `path`.
@@ -1814,5 +1934,311 @@ mod tests {
         let names: Vec<&str> = tabs.iter().map(Tab::file_name).collect();
 
         assert_eq!(names, vec!["main.rs", "other.rs"]);
+    }
+
+    /// El nombre del archivo de la pestaña activa, o `None` si no hay ninguna.
+    ///
+    /// Se compara por nombre y no por indice a proposito: el indice depende de cuantas
+    /// pestañas haya abiertas, y lo que se quiere saber es que se esta viendo el
+    /// documento correcto.
+    fn activa(tabs: &OpenTabs) -> Option<String> {
+        tabs.active()
+            .and_then(|indice| tabs.get(indice))
+            .map(|tab| tab.file_name().to_owned())
+    }
+
+    #[test]
+    fn a_new_set_of_tabs_has_no_active_one() {
+        let tabs = OpenTabs::new();
+
+        assert_eq!(tabs.active(), None);
+    }
+
+    /// Abrir un documento lo deja activo.
+    ///
+    /// Abrir es pedir que se vea: si se abriera un documento y no se viera, habria que
+    /// pedirlo otra vez para que apareciera, y el usuario tendria que adivinar por que no
+    /// pasa nada.
+    #[test]
+    fn opening_a_document_leaves_it_active() {
+        let mut tabs = OpenTabs::new();
+
+        tabs.open(path("src/main.rs"), "uno");
+
+        assert_eq!(activa(&tabs).as_deref(), Some("main.rs"));
+    }
+
+    /// La ultima pestaña abierta es la activa, no la primera.
+    ///
+    /// Va en su propio test porque es la otra mitad de lo mismo: si se comprobara solo que
+    /// "se abre algo activo", pasaria con la primera pestaña y no con la ultima, que es la
+    /// que se ha pedido.
+    #[test]
+    fn the_last_document_opened_is_the_active_one() {
+        let mut tabs = OpenTabs::new();
+        tabs.open(path("src/main.rs"), "uno");
+
+        tabs.open(path("src/other.rs"), "dos");
+
+        assert_eq!(activa(&tabs).as_deref(), Some("other.rs"));
+    }
+
+    /// Abrir un documento que ya esta abierto lo trae a delante.
+    ///
+    /// Es lo que el usuario quiere al pulsarlo otra vez en el explorador: no crear una
+    /// segunda pestaña del mismo archivo, sino volver a la que ya tenia con sus cambios.
+    #[test]
+    fn reopening_an_open_document_brings_its_tab_forward() {
+        let mut tabs = OpenTabs::new();
+        tabs.open(path("src/main.rs"), "uno");
+        tabs.open(path("src/other.rs"), "dos");
+
+        let index = tabs.open(path("src/main.rs"), "otro texto");
+
+        assert_eq!(index, 0);
+        assert_eq!(tabs.len(), 2);
+        assert_eq!(activa(&tabs).as_deref(), Some("main.rs"));
+    }
+
+    #[test]
+    fn the_active_tab_can_be_changed() {
+        let mut tabs = OpenTabs::new();
+        tabs.open(path("src/main.rs"), "uno");
+        tabs.open(path("src/other.rs"), "dos");
+
+        let changed = tabs.activate(0);
+
+        assert!(changed);
+        assert_eq!(activa(&tabs).as_deref(), Some("main.rs"));
+    }
+
+    /// Activar una pestaña que no existe no cambia nada.
+    ///
+    /// El indice lo elige quien llama, que puede estar equivocado: activar no puede
+    /// inventarse una pestaña ni dejar la activa en un sitio que ya no es el suyo.
+    #[test]
+    fn activating_a_tab_that_is_not_open_changes_nothing() {
+        let mut tabs = OpenTabs::new();
+        tabs.open(path("src/main.rs"), "uno");
+
+        let changed = tabs.activate(9);
+
+        assert!(!changed);
+        assert_eq!(activa(&tabs).as_deref(), Some("main.rs"));
+    }
+
+    /// Al cerrar la activa pasa a estarlo la que ocupa su sitio.
+    ///
+    /// La politica se decide aqui y no donde se guarda la lista porque es de este tipo de
+    /// dato y en ningun otro sitio: es la que hace que cerrar la pestaña de en medio no
+    /// deje al usuario sin nada que ver, que es la sensacion de haber perdido el
+    /// documento.
+    #[test]
+    fn al_cerrar_la_activa_pasa_a_ser_activa_la_que_ocupa_su_sitio() {
+        let mut tabs = OpenTabs::new();
+        tabs.open(path("uno.rs"), "uno");
+        tabs.open(path("dos.rs"), "dos");
+        tabs.open(path("tres.rs"), "tres");
+        tabs.activate(1);
+
+        tabs.close(1);
+
+        assert_eq!(activa(&tabs).as_deref(), Some("tres.rs"));
+    }
+
+    /// Si la activa era la ultima, pasa a estarlo la nueva ultima.
+    ///
+    /// La otra mitad de la misma politica: donde no hay sitio al que irse hacia delante,
+    /// se mira hacia atras, y no se deja al usuario sin nada abierto.
+    #[test]
+    fn al_cerrar_la_ultima_activa_pasa_a_ser_activa_la_nueva_ultima() {
+        let mut tabs = OpenTabs::new();
+        tabs.open(path("uno.rs"), "uno");
+        tabs.open(path("dos.rs"), "dos");
+        tabs.activate(1);
+
+        tabs.close(1);
+
+        assert_eq!(activa(&tabs).as_deref(), Some("uno.rs"));
+    }
+
+    #[test]
+    fn al_cerrar_la_unica_pestana_no_queda_ninguna_activa() {
+        let mut tabs = OpenTabs::new();
+        tabs.open(path("uno.rs"), "uno");
+
+        tabs.close(0);
+
+        assert_eq!(tabs.active(), None);
+        assert_eq!(activa(&tabs), None);
+    }
+
+    /// Cerrar otra pestaña deja abierta la que se estaba viendo.
+    ///
+    /// Aunque la que se cierre este antes: el indice se mueve, y lo que tiene que seguir
+    /// activo es el mismo documento, no el mismo numero.
+    /// Cerrar otra pestaña deja abierta la que se estaba viendo.
+    ///
+    /// Aunque la que se cierre este antes: el indice se mueve, y lo que tiene que seguir
+    /// activo es el mismo documento, no el mismo numero.
+    #[test]
+    fn al_cerrar_otra_pestana_no_cambia_el_documento_que_se_ve() {
+        let mut tabs = OpenTabs::new();
+        tabs.open(path("uno.rs"), "uno");
+        tabs.open(path("dos.rs"), "dos");
+        tabs.open(path("tres.rs"), "tres");
+        tabs.activate(2);
+
+        tabs.close(0);
+
+        assert_eq!(activa(&tabs).as_deref(), Some("tres.rs"));
+    }
+
+    /// Un archivo con un cursor que se puede mover con el teclado.
+    ///
+    /// Tres líneas de distinto largo para que se vea que moverse no es contar caracteres:
+    /// en la línea corta no se puede pasar de su final y en la larga sí, y arriba y abajo
+    /// la columna se recorta a lo que quepa en la línea de destino.
+    fn documento_para_mover() -> Document {
+        Document::new("uno\ndos\ntres")
+    }
+
+    #[test]
+    fn el_cursor_se_mueve_a_la_izquierda() {
+        let mut document = documento_para_mover();
+        document.move_to(at(0, 2));
+
+        document.move_left();
+
+        assert_eq!(document.selection().at(), at(0, 1));
+    }
+
+    #[test]
+    fn el_cursor_se_mueve_a_la_derecha() {
+        let mut document = documento_para_mover();
+        document.move_to(at(1, 1));
+
+        document.move_right();
+
+        assert_eq!(document.selection().at(), at(1, 2));
+    }
+
+    #[test]
+    fn el_cursor_sube_y_baja_entre_lineas() {
+        let mut document = documento_para_mover();
+        document.move_to(at(2, 2));
+
+        document.move_up();
+        assert_eq!(document.selection().at(), at(1, 2));
+
+        document.move_down();
+        assert_eq!(document.selection().at(), at(2, 2));
+    }
+
+    /// Moverse a la izquierda desde el principio de una línea salta al final de la de
+    /// arriba.
+    ///
+    /// Es el comportamiento de cualquier editor y el que hace que mover a la izquierda
+    /// repetidamente llegue al principio del documento: si se parara en el principio de la
+    /// línea habría que pulsarlo tantas veces como líneas tiene el archivo.
+    #[test]
+    fn el_principio_de_una_linea_va_al_final_de_la_anterior() {
+        let mut document = documento_para_mover();
+        document.move_to(at(1, 0));
+
+        document.move_left();
+
+        assert_eq!(document.selection().at(), at(0, 3));
+    }
+
+    /// El final de una línea salta al principio de la de abajo, y no más allá de la última.
+    ///
+    /// Las dos partes en un test porque son la misma regla vista desde los dos lados: el
+    /// cursor recorre el documento entero como si fuera una sola línea de texto.
+    #[test]
+    fn el_final_de_una_linea_va_al_principio_de_la_siguiente() {
+        let mut document = documento_para_mover();
+        document.move_to(at(0, 3));
+
+        document.move_right();
+        assert_eq!(document.selection().at(), at(1, 0));
+
+        document.move_to(at(2, 4));
+        document.move_right();
+        assert_eq!(document.selection().at(), at(2, 4));
+    }
+
+    /// Moverse arriba o abajo deja la columna donde cabe en la línea de destino.
+    ///
+    /// Sin recortar, bajar desde la última columna de una línea larga llevaría a una
+    /// posición que no existe, y el cursor quedaría apuntando a un sitio donde no hay
+    /// nada que escribir.
+    #[test]
+    fn al_subir_o_bajar_la_columna_se_recorta_a_la_linea_de_destino() {
+        let mut document = documento_para_mover();
+        document.move_to(at(1, 3));
+
+        document.move_up();
+
+        assert_eq!(document.selection().at(), at(0, 3));
+    }
+
+    /// Moverse no toca el contenido ni marca el documento.
+    ///
+    /// Es lo que distingue mover de editar: si moverse marcara el documento, cualquier
+    /// paseo con las flechas dejaría el archivo con cambios sin guardar.
+    #[test]
+    fn moverse_no_modifica_el_documento() {
+        let mut document = documento_para_mover();
+        document.move_to(at(0, 0));
+
+        document.move_right();
+        document.move_down();
+        document.move_left();
+        document.move_up();
+
+        assert_eq!(document.buffer().text(), "uno\ndos\ntres");
+        assert!(!document.is_modified());
+        assert!(!document.can_undo());
+    }
+
+    /// Moverse con una selección la deja atrás.
+    ///
+    /// Sin quitarla, cada flecha alargaría la selección, que es lo que se hace pulsando
+    /// Mayúsculas. Un editor en el que moverse selecciona lo que va dejando atrás no
+    /// deja escribir donde quiere uno.
+    #[test]
+    fn moverse_deja_la_seleccion_atras() {
+        let mut document = documento_para_mover();
+        document.select(at(0, 3), at(0, 0));
+
+        document.move_right();
+
+        assert!(document.selection().is_empty());
+        assert_eq!(document.selection().at(), at(0, 1));
+    }
+
+    /// Las cuatro direcciones del cursor se mueven en el mismo sitio.
+    ///
+    /// Se comprueba con las cuatro en un test porque el fallo interesante es que una se
+    /// quede sin hacer nada, y con cuatro tests sueltos eso se vería como un test que
+    /// falla y no como un movimiento que no existe.
+    #[test]
+    fn las_cuatro_direcciones_mueven_el_cursor() {
+        let mut document = documento_para_mover();
+        let inicio = document.selection().at();
+
+        document.move_right();
+        let derecha = document.selection().at();
+        document.move_down();
+        let abajo = document.selection().at();
+        document.move_left();
+        let izquierda = document.selection().at();
+        document.move_up();
+
+        assert_eq!(derecha, at(0, 1));
+        assert_eq!(abajo, at(1, 1));
+        assert_eq!(izquierda, at(1, 0));
+        assert_eq!(document.selection().at(), inicio);
     }
 }

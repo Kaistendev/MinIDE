@@ -213,7 +213,11 @@
 - [ ] **T-041 — Conectar documento con editor visual**  
   **RF:** RF-02, RF-03, RF-04  
   **Hecho cuando:** abrir un documento muestra su contenido y las ediciones actualizan el modelo del documento.  
-  **Estado:** delegada en FE-019, FE-020 y FE-023.
+  **Estado:** delegada en FE-019, FE-020 y FE-023. El editor existe y lo que
+  se escribe entra por el documento del core, pero todavia no hay quien le pase
+  ese documento: la ventana sigue sin proyecto abierto, que es FE-058. Por eso
+  "abrir un documento muestra su contenido" todavia no se puede comprobar de punta
+  a punta, y esta tarea no se cierra hasta que se pueda.
 
 - [ ] **T-042 — Implementar pestañas visuales**  
   **RF:** RF-04  
@@ -224,19 +228,32 @@
 - [ ] **T-043 — Implementar acciones básicas de guardado**  
   **RF:** RF-02, RF-14  
   **Hecho cuando:** Guardar y Guardar todo funcionan desde menú/atajo y respetan el estado modified.  
-  **Estado:** Savar es FE-029; "Guardar todo" necesita el comando `SaveAll` de
-  T-096, que aún no existe.
+  **Estado:** el atajo de guardar es FE-029, y el atajo pide la misma acción que el
+  botón del menú, así que los dos piden `Save`. "Guardar todo" sigue pendiente: es
+  FE-055 y FE-073, y el comando `SaveAll` ya existe (lo añadió T-096, que esta nota
+  daba por inexistente). El atajo y el botón piden el comando, pero todavía no hay quien
+  lo ejecute: el editor de la ventana es una fase posterior.
 
 - [ ] **T-044 — Implementar panel de salida**  
   **RF:** RF-13  
   **Hecho cuando:** la UI puede mostrar texto de salida y error de procesos sin bloquearse.  
-  **Estado:** delegada en FE-034 y FE-035; el proceso sin bloqueo es T-098.
+  **Estado:** el panel y la separación de flujos son FE-034 y FE-035, y ya están: la
+  ventana muestra la salida de un proceso línea a línea y distingue lo normal de lo que
+  es error. Falta la otra mitad, que es que la salida llegue sola mientras corre: eso es
+  T-098, que sigue sin hacer -el core solo tiene los tipos de resultado-, y por eso esta
+  tarea no se cierra todavía.
 
-- [ ] **T-045 — Añadir números de línea y resaltado básico**  
+- [x] **T-045 — Añadir números de línea y resaltado básico**  
   **RF:** RF-03, RF-07, RF-09  
   **Hecho cuando:** el editor muestra números de línea y puede distinguir al menos sintaxis básica para C# y Java.  
   **Estado:** números de línea en FE-028. El resaltado no tenía tarea en
-  `frontend-tasks.md`: se ha añadido FE-081 para que esta tarea sea cerrable.
+  `frontend-tasks.md`: se ha añadido FE-081 para que esta tarea sea cerrable.  
+  **Decision:** las palabras clave las dice el lenguaje, no el editor. `LanguageProvider`
+  tiene `keywords()` y son sus listas las que el resaltado mira, así que añadir un
+  lenguaje es añadir su lista y no tocar el editor. El editor solo sabe pintar un
+  comentario, una cadena y una palabra clave; lo que es una palabra clave se lo pregunta
+  a quien le pasa el lenguaje. Lo que no mira, y por eso es básico: comentarios de varias
+  líneas, cadenas de varias líneas y escapes.
 
 - [ ] **T-046 — Probar el flujo UI básico**  
   **RF:** RF-01, RF-02, RF-04, RF-05  
@@ -426,28 +443,46 @@
 | T-097 Documento activo | FE-016, FE-017, FE-070 |
 | T-098 Procesos sin bloquear | FE-034, FE-035, FE-038, FE-039, FE-043, FE-074 |
 
-- [ ] **T-095 — Exponer el movimiento del cursor en `Document`**  
+- [x] **T-095 — Exponer el movimiento del cursor en `Document`**  
   **RF:** RF-03  
   **Hecho cuando:** `Document` puede mover el cursor a izquierda, derecha, arriba y abajo usando la lógica de `Cursor`, sin que la UI tenga que duplicarla.  
   **Nota:** el movimiento existe en `Cursor`, pero `Document` solo expone `move_to`
   con posicion absoluta. Sin esto, FE-025 no se puede hacer sin copiar la lógica
-  de salto de linea en el frontend, que `plan.md` §2.4 prohibe.
+  de salto de linea en el frontend, que `plan.md` §2.4 prohibe.  
+  **Decision:** moverse descarta la selección. Mover no es alargar, y alargar es lo que
+  hace `extend_to`, que es a donde va la selección mientras se pulsa Mayusculas. Si
+  moverse dejara la selección, cada flecha movería el final de lo seleccionado.
+  Moverse tampoco marca el documento: es lo que distingue mover de editar, y si no,
+  un paseo con las flechas dejaría el archivo con cambios sin guardar.
 
-- [ ] **T-096 — Completar los comandos que la UI necesita**  
+- [x] **T-096 — Completar los comandos que la UI necesita**  
   **RF:** RF-02, RF-04, RF-05, RF-14  
   **Hecho cuando:** existen `OpenDocument`, `CloseDocument`, `SaveAll`, `NewFile`,
   `NewDirectory` y `Replace` en `Command`, con sus resultados y sus tests.  
   **Nota:** `Command` tiene hoy `NewProject`, `OpenProject`, `CloseProject`,
   `Save`, `Build`, `Run`, `Stop`, `Undo`, `Redo` y `Find`. FE-009 pide que un
-  botón y un menú usen el mismo comando, y no pueden si el comando no existe.
+  boton y un menú usen el mismo comando, y no pueden si el comando no existe.  
+  **Despues:** `ActivateDocument` lo añadio T-097, que es la tarea que sabe
+  cuál es el documento activo.
 
-- [ ] **T-097 — Añadir documento activo al conjunto de pestañas**  
+- [x] **T-097 — Añadir documento activo al conjunto de pestañas**  
   **RF:** RF-04  
   **Hecho cuando:** `OpenTabs` sabe cuál es la pestaña activa, se puede cambiar y
   se define qué pasa con el indice al cerrar la activa.  
   **Nota:** T-027 lo dejo fuera a proposito por ser politica. FE-017 lo necesita y
   la eleccion de que hacer al cerrar la activa es de las que hay que decidir
-  explicitamente, no por defecto.
+  explicitamente, no por defecto.  
+  **Decision:** abrir un documento deja activa su pestaña, y abrir uno que ya
+  esta abierto lo trae a delante sin crear una segunda. Al cerrar la activa pasa
+  a estarlo la que ocupa su sitio, y si era la ultima, la nueva ultima; con no
+  quedar ninguna no hay activa. Se decidio en el core y no en la ventana porque
+  `OpenTabs::close` ya devuelve la pestaña para que quien la cierre pueda mirar
+  si tenia cambios sin guardar, y quien decide eso tiene que ser el mismo. La
+  ventana repite la misma regla en su lista de pestañas - FE-015 - y lleva el
+  mismo nombre en el test para que las dos se cambien a la vez.  
+  **Nota:** para que la ventana pueda pedirlo, `Command` tiene
+  `ActivateDocument`, que va con los de documentos porque es de los que ha ido
+  pidiendo la interfaz, como ellos (T-096).
 
 - [ ] **T-098 — Ejecutar procesos sin bloquear la interfaz**  
   **RF:** RF-11, RF-12, RF-13  

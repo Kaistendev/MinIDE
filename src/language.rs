@@ -60,6 +60,14 @@ pub trait LanguageProvider {
     /// Configuracion de edicion del lenguaje.
     fn editing(&self) -> EditingConfiguration;
 
+    /// Palabras clave del lenguaje, en minusculas y sin punto y coma.
+    ///
+    /// Las da el proveedor porque son suyas: el editor sabe pintar una
+    /// palabra clave cuando se lo dicen, pero no sabe cuales lo son en cada
+    /// lenguaje, y si las tuviera escritas seria del lenguaje y habria que
+    /// tocarlo cada vez que se anadiera uno.
+    fn keywords(&self) -> &'static [&'static str];
+
     /// Si el archivo de `path` es de este lenguaje.
     ///
     /// No le importa al archivo que no tenga extension, y las extensiones se
@@ -99,6 +107,10 @@ mod tests {
 
         fn editing(&self) -> EditingConfiguration {
             self.editing
+        }
+
+        fn keywords(&self) -> &'static [&'static str] {
+            &["FAKE"]
         }
     }
 
@@ -152,6 +164,118 @@ mod tests {
 
         assert_eq!(identities, vec![LanguageId::CSharp, LanguageId::Java]);
         assert_eq!(extensions, vec![&["cs", "csx"][..], &["java"][..]]);
+    }
+
+    #[test]
+    fn las_palabras_clave_las_da_el_proveedor() {
+        struct SinPalabras;
+
+        impl LanguageProvider for SinPalabras {
+            fn id(&self) -> LanguageId {
+                LanguageId::CSharp
+            }
+
+            fn extensions(&self) -> &'static [&'static str] {
+                &["txt"]
+            }
+
+            fn editing(&self) -> EditingConfiguration {
+                editing()
+            }
+
+            fn keywords(&self) -> &'static [&'static str] {
+                &["PRUEBA"]
+            }
+        }
+
+        let provider = SinPalabras;
+
+        assert_eq!(provider.keywords(), &["PRUEBA"]);
+    }
+
+    /// Cada lenguaje dice cuales son sus palabras clave, y son distintas.
+    ///
+    /// Son suyas y no del editor porque el editor no puede saber que en C# se escribe
+    /// `namespace` y en Java `package`: si las tuviera escritas, el editor seria del
+    /// lenguaje, y para añadir un lenguaje habria que tocarlo. El resaltado sabe pintar
+    /// comentarios, cadenas y palabras; lo que es una palabra clave se lo pregunta al
+    /// proveedor.
+    #[test]
+    fn cada_lenguaje_declara_sus_palabras_clave() {
+        let csharp = crate::supports::CSharp;
+        let java = crate::supports::Java;
+
+        assert!(
+            csharp.keywords().contains(&"namespace"),
+            "namespace es de C#: {:?}",
+            csharp.keywords()
+        );
+        assert!(
+            java.keywords().contains(&"package"),
+            "package es de Java: {:?}",
+            java.keywords()
+        );
+        assert!(
+            !csharp.keywords().contains(&"package"),
+            "package no es de C#: {:?}",
+            csharp.keywords()
+        );
+        assert!(
+            !java.keywords().contains(&"namespace"),
+            "namespace no es de Java: {:?}",
+            java.keywords()
+        );
+    }
+
+    /// Los dos lenguajes comparten las palabras que los dos tienen.
+    ///
+    /// Va en su propio test porque es lo que hace que el resaltado de los dos se parezca:
+    /// si un lenguaje no tuviera `class`, un archivo de C# y otro de Java se verían
+    /// distintos por todo, y no por el lenguaje del que son.
+    #[test]
+    fn los_dos_lenguajes_comparten_lo_que_tienen_en_comun() {
+        let csharp = crate::supports::CSharp;
+        let java = crate::supports::Java;
+
+        for comun in [
+            "class", "public", "void", "return", "if", "new", "true", "null",
+        ] {
+            assert!(
+                csharp.keywords().contains(&comun) && java.keywords().contains(&comun),
+                "{comun} es de los dos: {:?} y {:?}",
+                csharp.keywords(),
+                java.keywords()
+            );
+        }
+    }
+
+    /// Las palabras clave no tienen mayusculas ni punto y coma.
+    ///
+    /// Se comprueba porque el resaltado las compara con la palabra tal y como está
+    /// escrita, y una lista con `Class` o con `class;` no se encontraría nunca. Va en su
+    /// propio test para que el fallo diga qué está mal y no que un archivo no se resalta.
+    #[test]
+    fn las_palabras_clave_estan_las_que_son() {
+        let csharp = crate::supports::CSharp;
+        let java = crate::supports::Java;
+
+        for provider in [&csharp as &dyn LanguageProvider, &java] {
+            assert!(
+                !provider.keywords().is_empty(),
+                "{:?} tiene que decir sus palabras clave",
+                provider.id()
+            );
+
+            for palabra in provider.keywords() {
+                assert!(
+                    palabra
+                        .chars()
+                        .all(|letra| letra.is_ascii_alphabetic() || letra == '_'),
+                    "{palabra:?} de {:?} solo puede llevar letras y guiones bajos",
+                    provider.id()
+                );
+            }
+        }
     }
 
     #[test]

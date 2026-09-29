@@ -390,6 +390,10 @@ impl LanguageProvider for ExternalLanguage {
     fn editing(&self) -> EditingConfiguration {
         EditingConfiguration::new(Some("//"), Some(("/*", "*/")), "    ")
     }
+
+    fn keywords(&self) -> &'static [&'static str] {
+        &["class"]
+    }
 }
 
 #[test]

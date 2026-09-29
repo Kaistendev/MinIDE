@@ -44,133 +44,133 @@
 
 ## Fase 1 — Ventana principal
 
-- [ ] **FE-005 — Crear layout raíz**
+- [x] **FE-005 — Crear layout raíz**
   - RF: RF-01
   - Definir menú, área central, panel inferior y barra de estado.
   - Hecho cuando: la ventana muestra claramente esas cuatro zonas.
 
-- [ ] **FE-006 — Crear menú principal**
+- [x] **FE-006 — Crear menú principal**
   - RF: RF-01, RF-14
   - Añadir File/Edit/View/Build o equivalente mínimo.
   - Hecho cuando: cada menú se abre y contiene acciones placeholder sin duplicar comandos.
 
-- [ ] **FE-007 — Crear barra de herramientas mínima**
+- [x] **FE-007 — Crear barra de herramientas mínima**
   - RF: RF-14
   - Añadir botones para abrir, guardar, build, run y stop.
   - Hecho cuando: cada botón dispara o registra el comando correspondiente.
 
-- [ ] **FE-008 — Crear barra de estado**
+- [x] **FE-008 — Crear barra de estado**
   - RF: RF-13
   - Mostrar estado general y documento actual.
   - Hecho cuando: la barra refleja al menos proyecto/documento/estado de operación.
 
-- [ ] **FE-009 — Definir ciclo `UI → Command → Core`**
+- [x] **FE-009 — Definir ciclo `UI → Command → Core`**
   - RF: RF-14, RNF-02, RNF-08
   - Introducir el punto único para emitir comandos desde la UI.
   - Hecho cuando: un botón y un menú pueden invocar la misma operación sin duplicar lógica.
 
 ## Fase 2 — Project Explorer
 
-- [ ] **FE-010 — Crear `ProjectView`**
+- [x] **FE-010 — Crear `ProjectView`**
   - RF: RF-05
   - Crear panel izquierdo para el proyecto.
   - Hecho cuando: existe un panel dedicado que puede renderizar un árbol vacío.
 
-- [ ] **FE-011 — Renderizar árbol de directorios**
+- [x] **FE-011 — Renderizar árbol de directorios**
   - RF: RF-05
   - Mostrar carpetas y archivos desde un modelo proporcionado por el core.
   - Hecho cuando: un proyecto de prueba puede visualizarse jerárquicamente.
 
-- [ ] **FE-012 — Expandir/contraer carpetas**
+- [x] **FE-012 — Expandir/contraer carpetas**
   - RF: RF-05
   - Añadir estado visual para expansión.
   - Hecho cuando: el usuario puede expandir y contraer cualquier carpeta visible.
 
-- [ ] **FE-013 — Seleccionar archivo**
+- [x] **FE-013 — Seleccionar archivo**
   - RF: RF-05, RF-07, RF-09
   - Emitir `OpenDocument` al seleccionar un archivo editable.
   - Hecho cuando: seleccionar un archivo produce exactamente un comando de apertura.
 
-- [ ] **FE-014 — Menú contextual básico del proyecto**
+- [x] **FE-014 — Menú contextual básico del proyecto**
   - RF: RF-05, RF-06
   - Preparar acciones Nuevo archivo/Nuevo directorio.
   - Hecho cuando: el menú contextual aparece y dispara los comandos correspondientes.
 
 ## Fase 3 — Tabs y documentos
 
-- [ ] **FE-015 — Crear modelo visual de tabs**
+- [x] **FE-015 — Crear modelo visual de tabs**
   - RF: RF-04
   - Añadir colección de pestañas visuales asociadas a documentos del core.
   - Hecho cuando: múltiples documentos pueden representarse sin copiar su contenido en `UiState`.
 
-- [ ] **FE-016 — Renderizar tabs**
+- [x] **FE-016 — Renderizar tabs**
   - RF: RF-04
   - Mostrar nombre y estado modificado.
   - Hecho cuando: cada documento abierto tiene una pestaña identificable y el modificado se distingue.
 
-- [ ] **FE-017 — Cambiar documento activo**
+- [x] **FE-017 — Cambiar documento activo**
   - RF: RF-04
   - Emitir cambio de documento activo.
   - Hecho cuando: hacer click en otra pestaña cambia el documento mostrado.
 
-- [ ] **FE-018 — Cerrar tab**
+- [x] **FE-018 — Cerrar tab**
   - RF: RF-04, RF-09
   - Implementar cierre visual y delegación al core.
   - Hecho cuando: una pestaña puede cerrarse y los documentos modificados no se descartan silenciosamente.
 
 ## Fase 4 — Editor base
 
-- [ ] **FE-019 — Crear `EditorView`**
+- [x] **FE-019 — Crear `EditorView`**
   - RF: RF-03
   - Crear el área central del editor.
   - Hecho cuando: existe un editor visible con un documento de prueba.
 
-- [ ] **FE-020 — Renderizar texto**
+- [x] **FE-020 — Renderizar texto**
   - RF: RF-03
   - Mostrar contenido proveniente del `Document` del core.
   - Hecho cuando: el texto del modelo aparece completo y con scroll básico.
 
-- [ ] **FE-021 — Cursor visual**
+- [x] **FE-021 — Cursor visual**
   - RF: RF-03
   - Dibujar el cursor según la posición del modelo.
   - Hecho cuando: el cursor se muestra en la posición indicada por el core.
 
-- [ ] **FE-022 — Selección visual básica**
+- [x] **FE-022 — Selección visual básica**
   - RF: RF-03
   - Representar rango seleccionado.
   - Hecho cuando: una selección del modelo puede visualizarse de principio a fin.
 
-- [ ] **FE-023 — Entrada de teclado**
+- [x] **FE-023 — Entrada de teclado**
   - RF: RF-03
   - Convertir entrada de texto en comandos de edición.
   - Hecho cuando: una pulsación inserta texto mediante el core y no mediante un buffer independiente del frontend.
 
-- [ ] **FE-024 — Backspace/Delete**
+- [x] **FE-024 — Backspace/Delete**
   - RF: RF-03
   - Mapear teclas de eliminación a comandos del core.
   - Hecho cuando: borrar un carácter modifica el documento real y actualiza la vista.
 
-- [ ] **FE-025 — Navegación del cursor**
+- [x] **FE-025 — Navegación del cursor**
   - RF: RF-03
   - Integrar izquierda/derecha/arriba/abajo.
   - Hecho cuando: las cuatro direcciones actualizan el cursor del core y la UI lo refleja.
 
-- [ ] **FE-026 — Scroll vertical**
+- [x] **FE-026 — Scroll vertical**
   - RF: RF-03, RNF-04
   - Añadir scroll al documento.
   - Hecho cuando: documentos de varias pantallas pueden recorrerse sin bloquear la UI.
 
-- [ ] **FE-027 — Scroll horizontal básico**
+- [x] **FE-027 — Scroll horizontal básico**
   - RF: RF-03
   - Permitir visualizar líneas largas.
   - Hecho cuando: una línea que supera el viewport puede recorrerse horizontalmente.
 
-- [ ] **FE-028 — Números de línea**
+- [x] **FE-028 — Números de línea**
   - RF: RF-03
   - Mostrar números de línea en un gutter.
   - Hecho cuando: cada línea visible presenta su número correcto.
 
-- [ ] **FE-081 — Resaltado de sintaxis básico**
+- [x] **FE-081 — Resaltado de sintaxis básico**
   - RF: RF-03, RF-07, RF-09
   - Colorear palabras clave, comentarios, cadenas y números según el lenguaje.
   - Hecho cuando: un archivo `.cs` y un `.java` se distinguen visualmente al
@@ -182,49 +182,49 @@
 
 ## Fase 5 — Atajos y comandos de edición
 
-- [ ] **FE-029 — Ctrl+S**
+- [x] **FE-029 — Ctrl+S**
   - RF: RF-02, RF-14
   - Conectar atajo con `Save`.
   - Hecho cuando: Ctrl+S ejecuta exactamente el mismo comando que el menú Guardar.
 
-- [ ] **FE-030 — Ctrl+Z / Ctrl+Y**
+- [x] **FE-030 — Ctrl+Z / Ctrl+Y**
   - RF: RF-03
   - Conectar undo/redo.
   - Hecho cuando: los atajos llaman al core y el documento refleja el resultado.
 
-- [ ] **FE-031 — Copiar/cortar/pegar**
+- [x] **FE-031 — Copiar/cortar/pegar**
   - RF: RF-03
   - Integrar clipboard con el modelo del editor.
   - Hecho cuando: copiar/cortar/pegar funciona sobre una selección real.
 
-- [ ] **FE-032 — Ctrl+F**
+- [x] **FE-032 — Ctrl+F**
   - RF: RF-03, RF-14
   - Mostrar búsqueda.
   - Hecho cuando: Ctrl+F abre la UI de búsqueda y puede enviar la consulta al core.
 
-- [ ] **FE-033 — Ctrl+H**
+- [x] **FE-033 — Ctrl+H**
   - RF: RF-03, RF-14
   - Mostrar búsqueda/reemplazo.
   - Hecho cuando: Ctrl+H abre la UI y puede solicitar reemplazo al core.
 
 ## Fase 6 — Integración del output y diagnósticos
 
-- [ ] **FE-034 — Crear `OutputView`**
+- [x] **FE-034 — Crear `OutputView`**
   - RF: RF-13
   - Crear panel inferior para salida de procesos.
   - Hecho cuando: el panel puede mostrar una secuencia de líneas recibidas del core.
 
-- [ ] **FE-035 — Mostrar stdout/stderr**
+- [x] **FE-035 — Mostrar stdout/stderr**
   - RF: RF-13
   - Diferenciar visualmente salida normal y error sin mezclar la fuente del dato.
   - Hecho cuando: una prueba de proceso muestra ambos flujos completos.
 
-- [ ] **FE-036 — Crear `DiagnosticsView`**
+- [x] **FE-036 — Crear `DiagnosticsView`**
   - RF: RF-13
   - Mostrar lista de diagnósticos.
   - Hecho cuando: un diagnóstico con archivo/línea/mensaje aparece en la lista.
 
-- [ ] **FE-037 — Seleccionar diagnóstico**
+- [x] **FE-037 — Seleccionar diagnóstico**
   - RF: RF-13
   - Permitir navegar al archivo/línea cuando exista posición.
   - Hecho cuando: seleccionar un diagnóstico con ubicación solicita la navegación correspondiente.

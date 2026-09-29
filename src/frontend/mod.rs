@@ -33,8 +33,20 @@
 //! Nada de esto se implementa antes de tiempo. Un widget que se añade sin su tarea se
 //! queda sin criterio para decidir si va al core o se queda aquí.
 
+mod acciones;
 mod app;
+mod atajos;
+mod busqueda;
+mod diagnosticos;
+mod editor;
+mod explorador;
 mod icon;
+mod layout;
+mod menu;
+mod salida;
+mod status;
+mod tabs;
+mod toolbar;
 mod ui_state;
 
 pub use app::{opciones, run, titulo, ventana, App};
