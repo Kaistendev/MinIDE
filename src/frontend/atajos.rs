@@ -11,7 +11,7 @@
 
 use eframe::egui;
 
-use super::acciones::{Accion, DESHACER, GUARDAR, REHACER};
+use super::acciones::{Accion, COMPILAR, DESHACER, DETENER, EJECUTAR, GUARDAR, REHACER};
 use super::app::App;
 
 /// Qué teclas hay que pulsar a la vez con el atajo.
@@ -27,6 +27,25 @@ pub struct Teclas {
 
 const CTRL: Teclas = Teclas {
     ctrl: true,
+    shift: false,
+};
+
+/// Solo `Shift`, que es lo que separa ejecutar de detener.
+///
+/// Sin un `const` para eso habría que escribir la pareja suelta en la fila, y una fila que
+/// no se parece a las de al lado se lee peor que el resto de la tabla.
+const SHIFT: Teclas = Teclas {
+    ctrl: false,
+    shift: true,
+};
+
+/// Ningún modificador, que es como se pulsan las teclas de función.
+///
+/// F5 y Shift+F5 se separan por el `Shift`, así que F5 necesita decir que no lleva
+/// ninguno: si la fila dejara el modificador en `false` por omisión y `atajo_de` no lo
+/// comprobara, las dos filas serían la misma.
+const NINGUNA: Teclas = Teclas {
+    ctrl: false,
     shift: false,
 };
 
@@ -65,10 +84,15 @@ pub struct Atajo {
 
 /// Los atajos de la ventana.
 ///
-/// Guardar, deshacer, rehacer, buscar y reemplazar. Los que piden una acción piden la
-/// misma del vocabulario que sus botones, para que un atajo y un botón no puedan pedir
-/// cosas distintas: si el atajo de guardar escribiera su propio comando, el botón y el
-/// atajo dejarían de ser la misma operación el día que uno de los dos cambiara.
+/// Guardar, deshacer, rehacer, buscar y reemplazar, y desde FE-040 a FE-042 también
+/// compilar, ejecutar y detener.
+///
+/// Los que piden una acción piden la misma del vocabulario que sus botones, para que un
+/// atajo y un botón no puedan pedir cosas distintas: si el atajo de guardar escribiera su
+/// propio comando, el botón y el atajo dejarían de ser la misma operación el día que uno de
+/// los dos cambiara. Compilar, ejecutar y detener no son una excepción: salen de la misma
+/// `Accion` que sus botones del menú y de la barra de herramientas, y por eso las tres
+/// superficies son la misma operación y no tres parecidas.
 pub const ATAJOS: &[Atajo] = &[
     Atajo {
         tecla: egui::Key::S,
@@ -94,6 +118,21 @@ pub const ATAJOS: &[Atajo] = &[
         tecla: egui::Key::H,
         teclas: CTRL,
         efecto: Efecto::Abrir(Dialogo::BusquedaYReemplazo),
+    },
+    Atajo {
+        tecla: egui::Key::B,
+        teclas: CTRL,
+        efecto: Efecto::Pedir(COMPILAR),
+    },
+    Atajo {
+        tecla: egui::Key::F5,
+        teclas: NINGUNA,
+        efecto: Efecto::Pedir(EJECUTAR),
+    },
+    Atajo {
+        tecla: egui::Key::F5,
+        teclas: SHIFT,
+        efecto: Efecto::Pedir(DETENER),
     },
 ];
 
@@ -184,6 +223,15 @@ mod tests {
 
     /// Una pulsación y su soltura, con su modificador.
     fn pulsar(tecla: egui::Key, ctrl: bool) -> Vec<egui::Event> {
+        pulsar_con(tecla, ctrl, false)
+    }
+
+    /// Una pulsación y su soltura, con los modificadores que se le pidan.
+    ///
+    /// Es una sola función y no una por cada combinación porque los atajos de compilar,
+    /// ejecutar y detener usan modificadores distintos: Ctrl+B lleva `ctrl`, F5 no lleva
+    /// ninguno y Shift+F5 lleva `shift`.
+    fn pulsar_con(tecla: egui::Key, ctrl: bool, shift: bool) -> Vec<egui::Event> {
         [true, false]
             .into_iter()
             .map(|pressed| egui::Event::Key {
@@ -193,6 +241,7 @@ mod tests {
                 repeat: false,
                 modifiers: egui::Modifiers {
                     ctrl,
+                    shift,
                     ..egui::Modifiers::default()
                 },
             })
@@ -207,6 +256,26 @@ mod tests {
             });
         });
         salida.textures_delta.clear();
+    }
+
+    /// La acción del menú o de la barra que se llama `nombre`.
+    ///
+    /// Se busca por el nombre y no por el comando porque es el nombre lo que las tres
+    /// superficies tienen que compartir: si el menú y el atajo pidieran el mismo comando con
+    /// nombres distintos, serían dos operaciones que se parecen.
+    fn accion_de_la_ventana(nombre: &str) -> acciones::Accion {
+        crate::frontend::menu::MENUS
+            .iter()
+            .flat_map(|menu| menu.acciones.iter())
+            .find(|accion| accion.nombre == nombre)
+            .copied()
+            .unwrap_or_else(|| panic!("la ventana no tiene ninguna acción que diga {nombre:?}"))
+    }
+
+    /// El atajo de `tecla` con esas modificadores, si lo hay.
+    fn atajo(tecla: egui::Key, teclas: Teclas) -> &'static super::Atajo {
+        super::atajo_de(tecla, teclas)
+            .unwrap_or_else(|| panic!("{tecla:?} con {teclas:?} no es un atajo"))
     }
 
     /// Ctrl+S pide guardar.
@@ -336,6 +405,110 @@ mod tests {
             combinaciones.len(),
             antes,
             "hay una combinación repetida: {ATAJOS:?}"
+        );
+    }
+
+    /// Ctrl+B pide compilar. FE-040.
+    #[test]
+    fn ctrl_b_pide_compilar() {
+        let mut app = App::new();
+
+        ventana(&mut app, &pulsar_con(egui::Key::B, true, false));
+
+        assert_eq!(app.peticiones(), vec![Command::Build]);
+    }
+
+    /// F5 pide ejecutar y Shift+F5 pide detener. FE-041 y FE-042.
+    ///
+    /// Van en el mismo test porque son la misma tecla y lo que los distingue es el
+    /// modificador: si se comprobaran por separado, un F5 que pidiera las dos cosas pasaría
+    /// los dos tests y seguiría estando mal.
+    #[test]
+    fn f5_pide_ejecutar_y_con_shift_pide_detener() {
+        let mut app = App::new();
+        ventana(&mut app, &pulsar_con(egui::Key::F5, false, false));
+        assert_eq!(app.peticiones(), vec![Command::Run]);
+
+        let mut app = App::new();
+        ventana(&mut app, &pulsar_con(egui::Key::F5, false, true));
+        assert_eq!(app.peticiones(), vec![Command::Stop]);
+    }
+
+    /// Compilar, ejecutar y detener piden lo mismo desde el atajo, el menú y la barra.
+    /// FE-040, FE-041 y FE-042.
+    ///
+    /// Las tres tareas piden lo mismo —que las tres superficies disparen la misma
+    /// operación— y por eso van en un solo test: separadas, dejarían abierta la
+    /// posibilidad de que un atajo pidiera `Build` mientras su botón pidiera otra cosa y los
+    /// dos testsasen.
+    ///
+    /// Se comparan las tres `Accion` enteras y no los comandos que piden, porque si fueran
+    /// acciones distintas con el mismo comando, el día que una de las dos cambiara la otra se
+    /// quedaría atrás sin que nada lo notara: y la que cambiaría es la que ve el usuario.
+    #[test]
+    fn el_atajo_el_menu_y_la_barra_piden_la_misma_accion() {
+        use crate::frontend::toolbar::BOTONES;
+
+        for (tecla, teclas, nombre) in [
+            (egui::Key::B, super::CTRL, "Compilar"),
+            (egui::Key::F5, super::NINGUNA, "Ejecutar"),
+            (egui::Key::F5, super::SHIFT, "Detener"),
+        ] {
+            let del_atajo = atajo(tecla, teclas);
+            let del_menu = accion_de_la_ventana(nombre);
+            let de_la_barra = BOTONES
+                .iter()
+                .find(|accion| accion.nombre == nombre)
+                .copied();
+
+            assert_eq!(
+                del_atajo.efecto,
+                super::Efecto::Pedir(del_menu),
+                "el atajo de {nombre:?} tiene que pedir la acción del menú"
+            );
+            assert_eq!(
+                de_la_barra,
+                Some(del_menu),
+                "el botón de {nombre:?} de la barra tiene que ser la misma acción"
+            );
+        }
+    }
+
+    /// Ctrl no aplasta a Shift, ni al revés.
+    ///
+    /// Sin esto, Shift+F5 pediría compilar y ejecutar a la vez: la tabla busca la primera
+    /// fila que coincide y, con el `ctrl` de una sin comprobar, dos combinaciones distintas
+    /// se parecerían lo suficiente como para que la pulsación cayera en la fila que no
+    /// tocaba.
+    #[test]
+    fn los_modificadores_no_se_confunden_entre_si() {
+        let con_ctrl_y_shift = Teclas {
+            ctrl: true,
+            shift: true,
+        };
+
+        assert_eq!(
+            atajo(egui::Key::F5, super::NINGUNA).efecto,
+            super::Efecto::Pedir(crate::frontend::acciones::EJECUTAR),
+            "F5 sin modificadores ejecuta"
+        );
+        assert_eq!(
+            atajo(egui::Key::F5, super::SHIFT).efecto,
+            super::Efecto::Pedir(crate::frontend::acciones::DETENER),
+            "Shift+F5 detiene"
+        );
+        assert!(
+            atajo_de(egui::Key::F5, con_ctrl_y_shift).is_none(),
+            "Ctrl+Shift+F5 no es un atajo: no hay fila que lo atienda a propósito"
+        );
+
+        let mut app = App::new();
+        ventana(&mut app, &pulsar_con(egui::Key::F5, true, true));
+
+        assert_eq!(
+            app.peticiones(),
+            Vec::<Command>::new(),
+            "una combinación que no está en la tabla no pide nada"
         );
     }
 }

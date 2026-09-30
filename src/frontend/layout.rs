@@ -37,13 +37,17 @@ use eframe::egui;
 use super::app::App;
 use super::busqueda;
 use super::diagnosticos;
+use super::dialogos;
+use super::diseniador;
 use super::editor;
 use super::explorador;
 use super::menu;
+use super::propiedades as panel_de_propiedades;
 use super::salida;
 use super::status;
 use super::tabs;
 use super::toolbar;
+use super::ui_state::VistaCentral;
 
 /// Una zona del layout raíz.
 ///
@@ -67,6 +71,8 @@ pub enum Zona {
     Estado,
     /// Pegado a la izquierda: el explorador de proyectos. FE-010 a FE-014.
     Proyecto,
+    /// Pegado a la derecha: las propiedades de lo seleccionado. FE-051.
+    Propiedades,
 }
 
 impl Zona {
@@ -78,6 +84,7 @@ impl Zona {
             Zona::Inferior => "Panel inferior",
             Zona::Estado => "Barra de estado",
             Zona::Proyecto => "Proyecto",
+            Zona::Propiedades => "Propiedades",
         }
     }
 
@@ -107,7 +114,9 @@ pub fn layout(ui: &mut egui::Ui, app: &mut App) {
     barra_estado(ui, app);
     inferior(ui, app);
     explorador(ui, app);
+    propiedades(ui, app);
     central(ui, app);
+    dialogos::panel(ui.ctx(), app);
 }
 
 /// La zona de arriba: el menú y la barra de herramientas.
@@ -128,9 +137,14 @@ fn menu(ui: &mut egui::Ui, app: &mut App) {
 /// El pie de la ventana: la barra de estado.
 ///
 /// Se dibuja antes que el panel inferior para acabar debajo de él, y es la única zona que
-/// solo lee: mira el estado visual y no pide nada.
+/// solo lee: mira el estado visual y lo que se está haciendo, y no pide nada. Las
+/// operaciones entran por aquí porque su estado (FE-038, FE-039) es de lo que vive la
+/// barra, y sacarlo de la aplicación y de la zona para que cada una tenga el suyo sería
+/// tener dos verdades sobre si se está compilando.
 fn barra_estado(ui: &mut egui::Ui, app: &App) {
-    egui::Panel::bottom(Zona::Estado.id()).show(ui, |ui| status::barra(ui, app.state()));
+    egui::Panel::bottom(Zona::Estado.id()).show(ui, |ui| {
+        status::barra(ui, app.state(), app.operaciones());
+    });
 }
 
 /// El panel de la izquierda: el explorador de proyectos. FE-010.
@@ -191,7 +205,8 @@ fn inferior(ui: &mut egui::Ui, app: &mut App) {
         });
 }
 
-/// El área central: las pestañas y el editor. FE-015 a FE-028 y FE-081.
+/// El área central: las pestañas y el editor, o el diseñador. FE-015 a FE-028, FE-044 y
+/// FE-081.
 ///
 /// No lleva id propio porque no es un panel: `CentralPanel` se queda con el espacio que
 /// dejan los paneles de los bordes y no guarda nada por id.
@@ -204,17 +219,62 @@ fn inferior(ui: &mut egui::Ui, app: &mut App) {
 /// proyecto abierto, y sin documento no hay nada que enseñar. FE-058 es la que abre un
 /// proyecto y el documento que tenga abierto, y entonces aquí se le pasa su documento y el
 /// lenguaje del archivo en vez de nada.
+///
+/// El diseñador es la otra mitad de esta misma zona (FE-044), y solo puede verse uno de los
+/// dos: si los dos se dibujaran a la vez cada uno se quedaría con la mitad del panel, y el
+/// usuario vería dos mitades en lugar de una vista. Cuál de los dos se ve lo dice el estado
+/// visual, y de momento nadie cambia eso porque abrir el diseñador es FE-059 y FE-063.
 fn central(ui: &mut egui::Ui, app: &mut App) {
-    egui::CentralPanel::default().show(ui, |ui| {
-        ui.vertical(|ui| {
-            tabs::panel(ui, app);
-            ui.separator();
-            busqueda::panel(ui, app);
-            ui.separator();
-            editor::panel(ui, editor::PestanaVisual::vacio(), app);
-        });
+    egui::CentralPanel::default().show(ui, |ui| match app.state().vista_central() {
+        VistaCentral::Editor => {
+            ui.vertical(|ui| {
+                tabs::panel(ui, app);
+                ui.separator();
+                busqueda::panel(ui, app);
+                ui.separator();
+                let area = egui::Rect::from_min_size(ui.min_rect().min, ui.available_size());
+                if std::env::var("DBGDIS").is_ok() {
+                    eprintln!("DBGDIS area={:?}", area);
+                }
+                let contexto = ui.interact(
+                    area,
+                    editor::id_del_contexto(),
+                    egui::Sense::click_and_drag(),
+                );
+                ui.allocate_ui(area.size(), |ui| {
+                    editor::panel(ui, editor::PestanaVisual::vacio(), app);
+                });
+                editor::menu_contextual(contexto, app);
+            });
+        }
+        VistaCentral::Diseniador => diseniador::panel(ui, app),
     });
 }
+
+/// La columna de la derecha: las propiedades del control seleccionado. FE-051.
+///
+/// Va pegada a la derecha y antes que el área central por la misma razón que el explorador:
+/// cada panel se queda con el sitio que dejan los que se han dibujado antes.
+///
+/// El ancho es fijo y no el que egui quiera porque el ancho de un panel se guarda entre
+/// frames y un panel que cambia de ancho al redimensionarse la ventana empuja la zona
+/// central de lado. Con el ancho escrito aquí la columna se comporta como la de un IDE.
+fn propiedades(ui: &mut egui::Ui, app: &mut App) {
+    egui::Panel::right(Zona::Propiedades.id())
+        .exact_size(ANCHO_DE_LAS_PROPIEDADES)
+        .show(ui, |ui| {
+            ui.label(Zona::Propiedades.nombre());
+            ui.separator();
+            panel_de_propiedades::panel(ui, app);
+        });
+}
+
+/// Lo que mide la columna de propiedades, en puntos.
+///
+/// Son 220 porque dan para el nombre del control y su valor en una línea, que es lo más
+/// ancho que enseña el panel, y porque dejando más de la mitad de una ventana de mil puntos
+/// se le está quitando sitio al diseñador para enseñarle cuatro campos.
+const ANCHO_DE_LAS_PROPIEDADES: f32 = 220.0;
 
 /// El marcador de una zona ya no hace falta: la última zona sin contenido propio era la de
 /// abajo, y ahora las cuatro zonas enseñan algo. Volverá con la de propiedades (FE-051),
@@ -249,6 +309,13 @@ mod tests {
     /// empieza más allá y deja de cruzar la ventana de lado a lado. Los rectángulos que no
     /// llegan al borde derecho son esos paneles de los lados, y las líneas separadoras de
     /// egui no son rectángulos.
+    /// Cada franja horizontal ocupa más de media ventana, y los paneles de los lados no.
+    ///
+    /// Se distinguen por el ancho y no por llegar al borde derecho porque ahora hay dos
+    /// columnas pegadas a los lados —el explorador y las propiedades (FE-051)—, y una de
+    /// ellas llega también al borde derecho: buscándolas por el borde, la columna de
+    /// propiedades se contaría como una franja y el área central, que queda entre las dos
+    /// columnas, se contaría como si no existiera.
     fn franjas(context: &egui::Context) -> Vec<egui::Rect> {
         let mut app = super::super::app::App::new();
         let mut salida = context.run_ui(entrada(), |ui| {
@@ -267,7 +334,7 @@ mod tests {
                 egui::Shape::Rect(rectangulo) => Some(rectangulo.rect),
                 _ => None,
             })
-            .filter(|rectangulo| rectangulo.max.x >= ANCHO - MARGEN)
+            .filter(|rectangulo| rectangulo.width() > ANCHO / 2.0)
             .collect();
 
         franjas.sort_by(|uno, otro| uno.min.y.total_cmp(&otro.min.y));
@@ -312,7 +379,13 @@ mod tests {
     fn las_zonas_del_layout_no_se_confunden_entre_si() {
         use std::collections::HashSet;
 
-        let zonas = [Zona::Menu, Zona::Central, Zona::Inferior, Zona::Estado];
+        let zonas = [
+            Zona::Menu,
+            Zona::Central,
+            Zona::Inferior,
+            Zona::Estado,
+            Zona::Propiedades,
+        ];
 
         let nombres: HashSet<&str> = zonas.iter().map(Zona::nombre).collect();
         assert_eq!(
@@ -333,19 +406,20 @@ mod tests {
         );
     }
 
-    /// Las cuatro zonas se reparten la ventana de arriba abajo.
+    /// Las cuatro franjas se reparten la ventana de arriba abajo.
     ///
-    /// Es lo que hace que la ventana se entienda: el menú arriba, el área central en
-    /// medio, la salida debajo y la barra de estado en el pie. Sin esto MiniIDE sería un
-    /// panel único con texto suelto, que es como estaba antes de esta tarea.
+    /// Es lo que hace que la ventana se entienda: el menú arriba, el área central en medio,
+    /// la salida debajo y la barra de estado en el pie. Sin esto MiniIDE sería un panel
+    /// único con texto suelto, que es como estaba antes de esta tarea.
     #[test]
     fn las_cuatro_zonas_reparten_la_ventana() {
         let [menu, central, inferior, estado] = zonas(&egui::Context::default());
 
         for zona in [menu, central, inferior, estado] {
             assert!(
-                zona.max.x >= ANCHO - MARGEN,
-                "una zona tiene que llegar al borde derecho de la ventana, y si no es un panel de los lados: {zona:?}"
+                zona.width() > ANCHO / 2.0,
+                "una franja tiene que cruzar la ventana de lado a lado, y si no es una \
+                 columna de los lados: {zona:?}"
             );
             assert!(
                 0.0 < zona.height(),

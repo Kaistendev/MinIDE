@@ -15,6 +15,7 @@ use crate::document::{TextPosition, TextRange};
 use crate::editor::Document;
 use crate::language::LanguageProvider;
 
+use super::acciones::{self, Accion, BUSCAR, COPIAR, CORTAR, DESHACER, PEGAR, REEMPLAZAR, REHACER};
 use super::app::App;
 use super::layout::Zona;
 use eframe::egui;
@@ -214,13 +215,54 @@ fn pintar_linea(
 /// Se lee y se pone a cero, y no solo se lee, porque la rueda es de quien está debajo del
 /// ratón: si el editor la leyera y la dejara, el que viniera después se desplazaría otra
 /// vez por la misma vuelta. Es lo que hace el scroll area de egui.
-fn rueda(ui: &egui::Ui) -> egui::Vec2 {
+fn rueda(ui: &mut egui::Ui) -> egui::Vec2 {
     ui.input_mut(|entrada| {
         let delta = entrada.smooth_scroll_delta;
         entrada.smooth_scroll_delta = egui::Vec2::ZERO;
 
         delta
     })
+}
+
+/// Las acciones del menú contextual del editor. FE-053.
+///
+/// Son las mismas que el menú Editar, y son las mismas [`Accion`] y no una lista parecida:
+/// un menú contextual que escribiera sus propios comandos acabaría siendo un segundo sitio
+/// donde corregir "Deshacer", y el día que uno cambiara el otro se quedaría atrás.
+///
+/// No está aquí la lista del menú Editar porque esa vive en `menu::MENUS` y es un `&'static`
+/// de otro módulo; aquí lo que se repite son las acciones, que es lo que tiene que ser la
+/// misma cosa para que un clic en un sitio y en el otro pidan lo mismo.
+const ACCIONES_DEL_CONTEXTO: &[Accion] =
+    &[DESHACER, REHACER, COPIAR, CORTAR, PEGAR, BUSCAR, REEMPLAZAR];
+
+/// Con qué id egui recuerda la zona del editor a la que se le abre el menú contextual.
+///
+/// Es un id aparte del que usa el editor para el foco porque son dos cosas distintas: el
+/// foco es de dónde viene el teclado y el id del menú es de qué zona se ha pulsado con el
+/// botón derecho. Si compartieran id, egui no podría saber cuál de los dos es el que se ha
+/// pulsado, y el menú se abriría al hacer clic en cualquier parte.
+pub fn id_del_contexto() -> egui::Id {
+    Zona::Central.id().with("editor.contexto")
+}
+
+/// Abre el menú contextual del editor sobre `respuesta`.
+///
+/// Va con la respuesta del área del editor y no sobre un `Ui` suelto porque egui necesita
+/// saber qué zona es la que se ha pulsado con el botón derecho: sin la respuesta, el menú se
+/// abriría en el punto del ratón sin importar dónde está el editor, y en una ventana con
+/// un panel al lado el menú saldría dentro del panel de al lado.
+///
+/// Los botones se dibujan con [`acciones::boton`], que es el único sitio donde un clic se
+/// convierte en un comando. Por eso lo que hay en el menú contextual del editor y lo que
+/// hay en el menú principal piden exactamente lo mismo: las dos listas están escritas con
+/// las mismas [`Accion`].
+pub fn menu_contextual(respuesta: egui::Response, app: &mut App) {
+    respuesta.context_menu(|ui| {
+        for accion in ACCIONES_DEL_CONTEXTO {
+            acciones::boton(ui, app, *accion);
+        }
+    });
 }
 
 /// Por dónde se está viendo, después de haber aplicado la rueda.
@@ -721,14 +763,204 @@ fn indice_to_byte(texto: &str, indice: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use crate::commands::Command;
     use crate::core::LanguageId;
     use crate::document::TextPosition;
     use crate::editor::Document;
+    use crate::frontend::acciones;
     use crate::frontend::App;
     use crate::language::{EditingConfiguration, LanguageProvider};
     use eframe::egui;
 
     use super::{Clase, Medidas, PestanaVisual, Token};
+
+    /// El menú contextual del editor ofrece lo mismo que el menú Editar. FE-053.
+    ///
+    /// Se comparan las dos listas enteras y no los comandos que piden: si fueran dos listas
+    /// con las mismas acciones escritas dos veces, el día que una cambiara la otra se quedaría
+    /// atrás sin que nada lo notara, y lo que se quedaría atrás es la mitad del editor, que
+    /// es donde más se usan.
+    #[test]
+    fn el_menu_contextual_del_editor_es_el_menu_editar() {
+        let del_editor: Vec<acciones::Accion> = super::ACCIONES_DEL_CONTEXTO.to_vec();
+        let del_menu: Vec<acciones::Accion> = crate::frontend::menu::MENUS
+            .iter()
+            .find(|menu| menu.titulo == "Editar")
+            .map(|menu| menu.acciones.to_vec())
+            .unwrap_or_else(|| panic!("la barra de menús tiene un menú Editar"));
+
+        assert!(
+            !del_editor.is_empty(),
+            "si la lista está vacía este test no comprueba nada"
+        );
+        assert_eq!(
+            del_editor, del_menu,
+            "el menú contextual del editor y el menú Editar ofrecen las mismas acciones, en el \
+             mismo orden"
+        );
+    }
+
+    /// Con el botón derecho sobre el editor se abre su menú contextual. FE-053.
+    ///
+    /// El botón derecho y no el izquierdo porque es el que lo abre, y porque con el otro hay
+    /// que comprobar que el menú no aparece: si saliera, cada vez que se pulsara el ratón en
+    /// un documento saltaría un menú encima.
+    #[test]
+    fn el_menu_contextual_del_editor_aparece_con_el_boton_derecho() {
+        let contexto = egui::Context::default();
+        let mut app = App::new();
+
+        assert!(
+            !contexto.any_popup_open(),
+            "sin pulsar nada no hay ningún menú abierto"
+        );
+
+        let antes = rectangulos(&contexto, &mut app);
+        for pressed in [true, false] {
+            ventana(
+                &contexto,
+                &mut app,
+                &raton_sobre(
+                    egui::pos2(450.0, 200.0),
+                    egui::PointerButton::Secondary,
+                    pressed,
+                ),
+            );
+        }
+
+        let elementos = nuevos(&contexto, &mut app, &antes);
+        assert_eq!(
+            elementos.len(),
+            super::ACCIONES_DEL_CONTEXTO.len(),
+            "el botón derecho sobre el editor tiene que abrir un menú con un botón por acción: \
+             {elementos:?}"
+        );
+    }
+
+    /// Abrir el menú contextual del editor no pide nada. FE-053.
+    ///
+    /// El clic derecho se usa muchas más veces de las que se pulsa un elemento, así que pedir
+    /// en cuanto se abre sería pedir casi siempre.
+    #[test]
+    fn abrir_el_menu_contextual_del_editor_no_pide_nada() {
+        let contexto = egui::Context::default();
+        let mut app = App::new();
+
+        for pressed in [true, false] {
+            ventana(
+                &contexto,
+                &mut app,
+                &raton_sobre(
+                    egui::pos2(450.0, 200.0),
+                    egui::PointerButton::Secondary,
+                    pressed,
+                ),
+            );
+        }
+
+        assert_eq!(app.peticiones(), Vec::<Command>::new());
+    }
+
+    /// El menú contextual pide sus comandos por el mismo sitio que el menú principal.
+    /// FE-053.
+    ///
+    /// Se comprueba el código y no los clics porque lo que tiene que ser la misma cosa es
+    /// el camino por el que un clic se convierte en un comando, y eso no se ve desde fuera:
+    /// un menú que escribiera sus propios comandos también funcionaría, y el día que uno de
+    /// los dos caminos cambiara el otro se quedaría atrás sin que nada lo notara.
+    #[test]
+    fn el_menu_contextual_del_editor_pide_por_el_camino_del_menu() {
+        let fuente =
+            std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(file!()))
+                .expect("el fuente del editor tiene que poder leerse");
+
+        let codigo = fuente
+            .split("#[cfg(test)]")
+            .next()
+            .expect("el editor tiene que tener código antes de los tests");
+
+        let menu = codigo
+            .split("fn menu_contextual")
+            .nth(1)
+            .expect("el editor tiene un menú contextual");
+
+        assert!(
+            menu.contains("acciones::boton("),
+            "un clic del menú contextual tiene que convertirse en comando por `acciones::boton`, \
+             que es el único sitio donde eso pasa"
+        );
+        assert!(
+            !menu.contains("app.emitir("),
+            "y el menú no puede pedir por su cuenta: si lo hiciera, el menú y el atajo \
+             dejarían de ser la misma operación"
+        );
+    }
+
+    /// Dibuja la ventana con unos eventos de por medio.
+    ///
+    /// Se dibuja la ventana entera y no solo el editor porque lo que se comprueba es que el
+    /// menú se abre en la ventana y no en un widget suelto, que es donde lo abriría un
+    /// editor que se dibujara solo.
+    fn ventana(contexto: &egui::Context, app: &mut App, eventos: &[egui::Event]) {
+        // Dos frames porque el menu es un area de egui: se crea en el primero y se pinta en
+        // el siguiente, y con uno solo el menu todavia no se habria visto.
+        let mut antes = contexto.run_ui(entrada_con(&[]), |ui| app.dibujar(ui));
+        antes.textures_delta.clear();
+
+        let mut salida = contexto.run_ui(entrada_con(eventos), |ui| app.dibujar(ui));
+        salida.textures_delta.clear();
+    }
+
+    /// Los rectángulos que se han pintado en la ventana, de izquierda a derecha y sin repetir.
+    fn rectangulos(contexto: &egui::Context, app: &mut App) -> Vec<egui::Rect> {
+        let mut salida = contexto.run_ui(entrada_con(&[]), |ui| app.dibujar(ui));
+        salida.textures_delta.clear();
+
+        let mut rectangulos: Vec<egui::Rect> = salida
+            .shapes
+            .into_iter()
+            .filter_map(|forma| match forma.shape {
+                egui::Shape::Rect(rectangulo) => Some(rectangulo.rect),
+                _ => None,
+            })
+            .collect();
+        rectangulos.sort_by(|una, otra| una.min.x.total_cmp(&otra.min.x));
+        rectangulos.dedup();
+
+        rectangulos
+    }
+
+    /// Los rectángulos que no estaban antes de abrir el menú, de arriba abajo.
+    ///
+    /// Los botones del menú no están en ninguna zona de la ventana, así que se distinguen por
+    /// ser nuevos, y van de arriba abajo porque así los escribe el horizontal que los
+    /// dibuja y así los ve el usuario.
+    fn nuevos(contexto: &egui::Context, app: &mut App, antes: &[egui::Rect]) -> Vec<egui::Rect> {
+        let mut nuevos: Vec<egui::Rect> = rectangulos(contexto, app)
+            .into_iter()
+            .filter(|rectangulo| !antes.contains(rectangulo))
+            .collect();
+        nuevos.sort_by(|una, otra| una.min.y.total_cmp(&otra.min.y));
+
+        nuevos
+    }
+
+    /// Un frame con el raton en pos y luego pulsando con oton.
+    ///
+    /// El movimiento va aparte del clic porque egui no sabe donde esta el raton hasta que se
+    /// le dice: un clic sin movimiento previo no se cuenta como clic sobre ningun widget, que
+    /// es lo mismo que pasa con un raton real que se mueve y luego pulsa.
+    fn raton_sobre(pos: egui::Pos2, boton: egui::PointerButton, pressed: bool) -> Vec<egui::Event> {
+        vec![
+            egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton {
+                pos,
+                button: boton,
+                pressed,
+                modifiers: egui::Modifiers::default(),
+            },
+        ]
+    }
 
     /// Una ventana de trabajo normal, ni enorme ni mínima.
     const ANCHO: f32 = 1000.0;

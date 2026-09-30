@@ -14,7 +14,10 @@ use std::path::Path;
 
 use eframe::egui;
 
+use crate::commands::Command;
+
 use super::app::App;
+use super::dialogos::Dialogo;
 
 /// Una pestaña: qué documento se ve detrás y cómo se ve la pestaña.
 ///
@@ -118,9 +121,33 @@ fn fila(ui: &mut egui::Ui, pestana: &Pestana, activa: bool, app: &mut App) {
     }
 
     if cerrar.clicked() {
-        app.state_mut().cerrar_pestana(pestana.ruta());
-        app.emitir(crate::commands::Command::CloseDocument);
+        pedir_cerrar(app, pestana.ruta());
     }
+}
+
+/// Cierra la pestaña de `ruta`, o pregunta antes si el documento tiene cambios. FE-055.
+///
+/// La pregunta no se pide desde el diálogo sino desde aquí, que es donde está el asterisco
+/// que dice que el documento está modificado. Preguntarla más tarde dejaría un hueco entre
+/// el clic y la pregunta en el que la ventana todavía no ha hecho nada, y en ese hueco el
+/// usuario ya ha creído que el documento se ha cerrado.
+fn pedir_cerrar(app: &mut App, ruta: &str) {
+    let modificado = app
+        .state()
+        .pestanas()
+        .iter()
+        .any(|pestana| pestana.ruta() == ruta && pestana.esta_modificada());
+
+    if modificado {
+        app.state_mut().abrir_dialogo(Dialogo::CerrarDocumento {
+            ruta: ruta.to_owned(),
+        });
+
+        return;
+    }
+
+    app.state_mut().cerrar_pestana(ruta);
+    app.emitir(Command::CloseDocument);
 }
 
 #[cfg(test)]

@@ -29,6 +29,10 @@
 //! * El estado visual mínimo: FE-004.
 //! * El layout, el menú, la barra de herramientas y la barra de estado: FE-005 a FE-008.
 //! * Los paneles: FE-010 en adelante.
+//! * Compilar, ejecutar y parar, con sus estados y su trabajo en segundo plano: FE-038 a
+//!   FE-043.
+//! * El diseñador visual y su panel de propiedades: FE-044 a FE-052.
+
 //!
 //! Nada de esto se implementa antes de tiempo. Un widget que se añade sin su tarea se
 //! queda sin criterio para decidir si va al core o se queda aquí.
@@ -38,18 +42,25 @@ mod app;
 mod atajos;
 mod busqueda;
 mod diagnosticos;
+mod dialogos;
+mod diseniador;
 mod editor;
 mod explorador;
 mod icon;
 mod layout;
 mod menu;
+mod operaciones;
+mod propiedades;
 mod salida;
+
 mod status;
 mod tabs;
 mod toolbar;
 mod ui_state;
 
 pub use app::{opciones, run, titulo, ventana, App};
+pub use diseniador::Comando as GestoDelDiseniador;
+pub use diseniador::Diseniador;
 pub use icon::{icono, LADO, LOGO};
 pub use ui_state::UiState;
 

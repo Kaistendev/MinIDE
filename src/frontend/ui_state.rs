@@ -15,6 +15,7 @@
 
 use std::collections::BTreeSet;
 
+use super::dialogos::Dialogo;
 use super::tabs::Pestana;
 
 /// El estado visual de la ventana.
@@ -82,6 +83,42 @@ pub struct UiState {
     /// responda -las coincidencias- es otra cosa, que todavía no le llega (FE-070 es la que
     /// la trae). Estar abierta o cerrada también es de la ventana.
     busqueda: Option<Busqueda>,
+    /// Qué se está viendo en el área central. FE-044.
+    ///
+    /// El editor y el diseñador son la misma zona y solo puede verse uno, así que cuál está
+    /// es estado de la ventana. Es un dato y no un modelo entero porque no hay nada del
+    /// diseñador aquí: el modelo es del core y lo tiene `Diseniador`, y esto solo dice si se
+    /// está mirando.
+    vista_central: VistaCentral,
+    /// La pregunta que la ventana le está haciendo al usuario, si hay alguna. FE-055 y FE-056.
+    ///
+    /// Vive aquí y no en el core porque es una pregunta de la ventana: quién la decide y
+    /// cuándo la hace son de la ventana. Lo que hay dentro no es del dominio: una ruta o un
+    /// mensaje, no el documento ni el error.
+    dialogo: Option<Dialogo>,
+}
+
+/// Lo que se está viendo en el área central.
+///
+/// Son dos y no más porque son las dos que el plan de la ventana describe. Añadir una tercera
+/// sería un docking, y `docs/frontend-plan.md` §13 dice que en el MVP no.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum VistaCentral {
+    /// El editor de código. Es lo que se ve al abrir MiniIDE.
+    #[default]
+    Editor,
+    /// El diseñador visual. FE-044.
+    Diseniador,
+}
+
+impl VistaCentral {
+    /// Lo que dice la ventana mientras la zona no tenga contenido.
+    pub fn nombre(self) -> &'static str {
+        match self {
+            Self::Editor => "Editor",
+            Self::Diseniador => "Diseñador",
+        }
+    }
 }
 
 /// La búsqueda que se está haciendo: qué se busca y con qué se reemplaza.
@@ -122,6 +159,54 @@ impl Busqueda {
 impl UiState {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Qué se está viendo en el área central.
+    pub fn vista_central(&self) -> VistaCentral {
+        self.vista_central
+    }
+
+    /// Enseñar el diseñador en el área central.
+    ///
+    /// No abre ningún formulario: esto solo cambia lo que se ve. El modelo lo pone quien
+    /// sabe cuál es (FE-059 y FE-063), y un diseñador sin modelo es un formulario vacío, que
+    /// es exactamente lo que tiene que poder dibujarse (FE-044).
+    pub fn mostrar_diseniador(&mut self) {
+        self.vista_central = VistaCentral::Diseniador;
+    }
+
+    /// Volver al editor en el área central.
+    pub fn mostrar_editor(&mut self) {
+        self.vista_central = VistaCentral::Editor;
+    }
+
+    /// La pregunta que la ventana le está haciendo al usuario, si hay alguna.
+    pub fn dialogo(&self) -> Option<&Dialogo> {
+        self.dialogo.as_ref()
+    }
+
+    /// Abre una pregunta.
+    ///
+    /// Abrir una pregunta que ya está abierta la cambia por la nueva, y no la deja como
+    /// estaba: dos preguntas a la vez no tienen respuesta, porque la ventana solo sabe
+    /// hacer una. Lo que sí se conserva es la que estaba si es la misma, para que un aviso
+    /// que llega dos veces -dos fallos seguidos de la misma herramienta- no pierda lo que el
+    /// usuario estaba leyendo.
+    pub fn abrir_dialogo(&mut self, dialogo: Dialogo) {
+        self.dialogo = Some(dialogo);
+    }
+
+    /// Cierra la pregunta y se olvida de ella.
+    ///
+    /// Se olvida porque una pregunta cerrada y luego abierta otra vez por lo mismo no puede
+    /// enseñarla como si fuera nueva: la respuesta ya está dada.
+    pub fn cerrar_dialogo(&mut self) {
+        self.dialogo = None;
+    }
+
+    /// Si hay alguna pregunta abierta.
+    pub fn hay_dialogo_abierto(&self) -> bool {
+        self.dialogo.is_some()
     }
 
     /// Lo que dice la barra de estado, si dice algo.

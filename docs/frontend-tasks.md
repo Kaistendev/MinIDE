@@ -231,104 +231,161 @@
 
 ## Fase 7 — Build / Run / Stop en UI
 
-- [ ] **FE-038 — Estado de Build**
+- [x] **FE-038 — Estado de Build**
   - RF: RF-11, RF-13
   - Mostrar Idle/Building/Success/Failed.
   - Hecho cuando: una operación de build actualiza el estado correctamente.
+  - Nota: los cuatro estados viven en `src/frontend/operaciones.rs` y se enseñan en su
+    propio campo de la barra de estado. Decide el core (`BuildResult::succeeded`, que mira
+    el código de salida) y la ventana solo lo traduce.
 
-- [ ] **FE-039 — Estado de Run**
+- [x] **FE-039 — Estado de Run**
   - RF: RF-12, RF-13
   - Mostrar Idle/Running/Stopping/Exited.
   - Hecho cuando: el estado refleja el proceso real.
+  - Nota: el estado sale de `ProcessState` y no de lo que se pulsó. `Deteniendo` existe
+    porque pedir la parada no es haber parado, y solo se pasa a `Terminado` cuando el
+    sistema deja de ver el proceso.
 
-- [ ] **FE-040 — Conectar Build**
+- [x] **FE-040 — Conectar Build**
   - RF: RF-11
   - Conectar menú, toolbar y atajo Ctrl+B.
   - Hecho cuando: las tres superficies disparan el mismo comando Build.
+  - Nota: las tres piden la misma `Accion`, `acciones::COMPILAR`, y `App` la ejecuta una
+    sola vez por pulsación.
 
-- [ ] **FE-041 — Conectar Run**
+- [x] **FE-041 — Conectar Run**
   - RF: RF-12
   - Conectar F5 y botón Ejecutar.
   - Hecho cuando: ambas superficies disparan el mismo comando Run.
 
-- [ ] **FE-042 — Conectar Stop**
+- [x] **FE-042 — Conectar Stop**
   - RF: RF-12
   - Conectar Shift+F5 y botón Detener.
   - Hecho cuando: ambas superficies disparan el mismo comando Stop.
 
-- [ ] **FE-043 — Evitar bloqueo de UI durante build/run**
+- [x] **FE-043 — Evitar bloqueo de UI durante build/run**
   - RF: RF-11, RF-12, RNF-05
   - Validar visualmente e integrar estados de trabajo asíncrono.
   - Hecho cuando: durante una compilación o ejecución el editor sigue aceptando interacción básica.
+  - Nota: la ventana ejecuta los comandos en `App::avanzar`, que es `eframe::App::logic`.
+    Compilar arranca en otro hilo con `build::start_build` y se recoge con `try_recv`;
+    ejecutar usa `runtime::ProcessRegistry`, que además es lo que permite parar de verdad.
+    Mientras hay trabajo en marcha se pide otro repintado, porque egui solo dibuja cuando
+    le llega algo.
+  - Lo que sigue sin cerrar: T-098 sigue abierta porque la salida del proceso se recoge al
+    terminar y no mientras corre, que es lo que le falta.
 
 ## Fase 8 — Diseñador visual
 
-- [ ] **FE-044 — Crear `DesignerView`**
+- [x] **FE-044 — Crear `DesignerView`**
   - RF: RF-08, RF-10
   - Crear área central del diseñador.
   - Hecho cuando: un `DesignerModel` vacío puede renderizarse como canvas.
+  - Nota: `src/frontend/diseniador.rs`. Es la segunda vista del área central, junto al
+    editor: cuál de las dos se ve lo dice `UiState::vista_central`. Abrir un diseñador de
+    verdad es FE-059 y FE-063.
 
-- [ ] **FE-045 — Renderizar formulario**
+- [x] **FE-045 — Renderizar formulario**
   - RF: RF-08, RF-10
   - Dibujar ventana/formulario base desde el modelo.
   - Hecho cuando: el tamaño del formulario coincide con el modelo.
+  - Nota: un punto del modelo es un píxel del canvas. Sin esa equivalencia, un formulario
+    pegado al borde del panel podría no caber, y lo que se ve dejaría de ser lo que se
+    genera.
 
-- [ ] **FE-046 — Renderizar controles**
+- [x] **FE-046 — Renderizar controles**
   - RF: RF-08, RF-10
   - Dibujar componentes básicos.
   - Hecho cuando: Button/Label/TextBox/Panel o equivalentes visibles aparecen según el modelo.
+  - Nota: se dibujan en el orden del modelo y el último queda encima. Es el mismo criterio
+    que usa el golpe de selección, así que lo que se ve y lo que se puede pulsar coinciden.
 
-- [ ] **FE-047 — Seleccionar control**
+- [x] **FE-047 — Seleccionar control**
   - RF: RF-08, RF-10
   - Seleccionar un componente con click.
   - Hecho cuando: solo el control clicado queda seleccionado y el modelo de selección se actualiza.
+  - Nota: la selección la guarda `Diseniador`, no el `DesignerModel`. El modelo es lo que se
+    convierte en código y a la hora de generar da igual qué control esté resaltado.
 
-- [ ] **FE-048 — Mover control**
+- [x] **FE-048 — Mover control**
   - RF: RF-08, RF-10
   - Convertir drag en comando de movimiento.
   - Hecho cuando: mover un control cambia su posición en el `DesignerModel`.
+  - Nota: el drag se convierte en `diseniador::Comando::Mover` y entra por `App::pedir`. Un
+    control no se puede dejar fuera del formulario, porque el canvas enseña el formulario y
+    no lo que hay más allá.
 
-- [ ] **FE-049 — Redimensionar control**
+- [x] **FE-049 — Redimensionar control**
   - RF: RF-08, RF-10
   - Añadir handles mínimos de resize.
   - Hecho cuando: el tamaño del control cambia en el modelo al arrastrar un handle.
+  - Nota: cuatro esquinas, que es lo que "handles mínimos" pide. El tamaño no baja del
+    mínimo porque un control sin tamaño no se puede agarrar.
 
-- [ ] **FE-050 — Añadir control desde toolbox**
+- [x] **FE-050 — Añadir control desde toolbox**
   - RF: RF-08, RF-10
   - Crear toolbox mínima.
   - Hecho cuando: seleccionar un control del toolbox y colocarlo crea un componente en el modelo.
+  - Nota: los controles del toolbox los pone quien abre el diseñador, con los que declara su
+    framework. Aquí no hay lista fija porque eso sería escribir "Button" o "JButton" en la
+    ventana; FE-057 y FE-061 son las que la rellenan.
 
-- [ ] **FE-051 — Crear `PropertiesView`**
+- [x] **FE-051 — Crear `PropertiesView`**
   - RF: RF-08, RF-10
   - Mostrar propiedades del elemento seleccionado.
   - Hecho cuando: seleccionar un control muestra nombre, texto, posición y tamaño.
+  - Nota: `src/frontend/propiedades.rs`, en una columna a la derecha. Se enseñan todas las
+    propiedades del control y no solo la del texto porque su nombre depende del framework:
+    `Text` en WinForms y `text` en Swing.
 
-- [ ] **FE-052 — Editar propiedades**
+- [x] **FE-052 — Editar propiedades**
   - RF: RF-08, RF-10
   - Convertir cambios de propiedades en comandos.
   - Hecho cuando: modificar una propiedad actualiza el modelo y el canvas.
+  - Nota: el panel no guarda copia de ningún valor: manda un `diseniador::Comando` por
+    `App::pedir`, el mismo camino que el canvas. Las posiciones y los tamaños se cambian
+    con `DragValue` y el nombre solo al perder el foco, porque mientras se teclea un nombre
+    casi nunca es un nombre válido.
 
 ## Fase 9 — Menús contextuales y UX mínima
 
-- [ ] **FE-053 — Menú contextual del editor**
+- [x] **FE-053 — Menú contextual del editor**
   - RF: RF-03
   - Añadir acciones básicas de edición.
   - Hecho cuando: click derecho ofrece acciones pertinentes y ejecuta los mismos comandos que el menú principal.
+  - Nota: `editor::menu_contextual`, sobre el área del editor y no sobre la ventana entera,
+    para que el clic derecho en el explorador no abra los dos menús. La lista es la misma
+    que la del menú Editar y está escrita con las mismas `Accion`, así que un clic pide lo
+    mismo en los dos sitios.
 
-- [ ] **FE-054 — Menú contextual del diseñador**
+- [x] **FE-054 — Menú contextual del diseñador**
   - RF: RF-08, RF-10
   - Añadir duplicar/eliminar si esas operaciones existen en el core.
   - Hecho cuando: las acciones disponibles no duplican lógica en la UI.
+  - Nota: solo hay eliminar. `DesignerModel` quita controles y no los duplica, así que un
+    botón de duplicar sería un botón que acepta el clic y no hace nada. Eliminar es un
+    `diseniador::Comando::Borrar` más, por el mismo `App::pedir` que el resto de los gestos.
 
-- [ ] **FE-055 — Diálogo de confirmación al cerrar documento modificado**
+- [x] **FE-055 — Diálogo de confirmación al cerrar documento modificado**
   - RF: RF-02, RF-04
   - Implementar modal Guardar/Descartar/Cancelar.
   - Hecho cuando: cerrar un documento modificado siempre requiere una decisión explícita.
+  - Nota: `src/frontend/dialogos.rs`. La pregunta la hace `tabs` al pulsar la cruz, antes de
+    cerrar nada, y la contesta el diálogo: Guardar emite `Save` y luego `CloseDocument`,
+    Descartar solo `CloseDocument`, y Cancelar no hace nada. Lo que el diálogo no hace es
+    guardar por su cuenta, porque entonces habría dos caminos para guardar y no habría forma
+    de saber cuál falló.
 
-- [ ] **FE-056 — Diálogo de errores de toolchain**
+- [x] **FE-056 — Diálogo de errores de toolchain**
   - RF: RF-16
   - Mostrar dependencia faltante de forma clara.
   - Hecho cuando: un .NET SDK/JDK ausente genera un mensaje útil y no un panic en UI.
+  - Nota: antes de compilar o ejecutar se pregunta al proveedor si está disponible. El
+    mensaje es su `missing_message()`, no uno escrito aquí: `.NET SDK` y `JDK` se nombran en
+    la toolchain, no en la ventana. Con la herramienta ausente no se lanza nada y se avisa;
+    sin el aviso, el fallo llegaría como un error de compilación cualquiera, que es lo que
+    RF-16 dice que no tiene que pasar.
 
 ## Fase 10 — Integración C# WinForms
 

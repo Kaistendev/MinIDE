@@ -91,6 +91,13 @@ mod tests {
     const ANCHO: f32 = 1000.0;
     const ALTO: f32 = 800.0;
 
+    /// Lo que le cuesta a egui cada frontera entre zonas.
+    ///
+    /// egui reserva fuera del rectángulo que pinta cada panel el ancho de su línea
+    /// separadora, así que un panel pegado al borde llega a `ANCHO - 1` y no a `ANCHO`.
+    /// Comparar al píxel sería medir el marco de egui y no el sitio del panel.
+    const MARGEN: f32 = 2.0;
+
     /// Un frame de la ventana con estos eventos de por medio.
     fn entrada(eventos: &[egui::Event]) -> egui::RawInput {
         egui::RawInput {
@@ -194,8 +201,9 @@ mod tests {
     /// Un menú abierto se pinta debajo de la franja de arriba, y sus elementos son
     /// estrechos y no están pegados a la ventana: un menú que flota va con su botón, que
     /// tampoco toca el borde. Con esas dos cosas fuera se descartan el explorador de
-    /// proyectos, que está pegado al borde izquierdo (FE-010), y el área central, que llega
-    /// al borde derecho, y lo que sale son los botones de las acciones del menú.
+    /// proyectos y la columna de propiedades, que están pegados a los lados (FE-010 y
+    /// FE-051), y el área central, que llega al borde derecho, y lo que sale son los
+    /// botones de las acciones del menú.
     ///
     /// Da igual que los elementos estén apagados: también se pintan, y una acción apagada
     /// que no se pintara sería invisible en vez de desactivada.
@@ -206,6 +214,7 @@ mod tests {
             .into_iter()
             .filter(|rectangulo| rectangulo.max.y > franja.max.y)
             .filter(|rectangulo| rectangulo.min.x > 0.0)
+            .filter(|rectangulo| rectangulo.max.x < ANCHO - MARGEN)
             .filter(|rectangulo| rectangulo.width() < ANCHO / 2.0)
             .collect();
 
