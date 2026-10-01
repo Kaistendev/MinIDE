@@ -5,19 +5,20 @@
 //! herramientas (FE-009), porque los dos son la misma lista de acciones puesta de otra
 //! forma.
 //!
-//! Las acciones sin comando siguen apagadas, y ahora eso significa algo concreto: el core
-//! todavía no tiene ese comando. Lo que va a estar en la barra de herramientas es lo mismo
-//! —las acciones con comando—, y se dibujan con el mismo [`acciones::boton`], así que un
+//! Y todo lo que hay en la barra hace algo. No hay acciones apagadas ni menús que se abran
+//! para no decir nada: un elemento que el usuario ve y no puede usar no es información, es
+//! una mentira pequeña, y FE-077 quita esos. Lo que todavía no se puede hacer no se
+//! escribe en la barra; lo que se puede, se dibuja con [`acciones::boton`] y así un
 //! "Guardar" del menú y el de la barra piden lo mismo por el mismo camino.
 //!
 //! Un botón apagado y no un botón que no hace nada: un botón que no hace nada parece un
-//! fallo del IDE, y uno apagado dice la verdad, que es que esa acción todavía no está.
+//! fallo del IDE, y uno apagado parece una función a medio hacer. Ninguno de los dos está.
 
 use eframe::egui;
 
 use super::acciones::{
-    self, Accion, ABRIR_PROYECTO, BUSCAR, COMPILAR, COPIAR, CORTAR, DESHACER, DETENER, EJECUTAR,
-    GUARDAR, NUEVO_PROYECTO, PANEL_DE_PROPIEDADES, PANEL_DE_PROYECTO, PEGAR, REEMPLAZAR, REHACER,
+    self, Accion, ABRIR_PROYECTO, BUSCAR, COMPILAR, DESHACER, DETENER, EJECUTAR, GUARDAR,
+    NUEVO_PROYECTO, REEMPLAZAR, REHACER,
 };
 use super::app::App;
 
@@ -35,6 +36,10 @@ pub struct Menu {
 /// Las acciones son las que el proyecto ya tiene escritas en algún sitio —RF-14, T-039,
 /// RF-03 y el layout de `frontend-plan.md`—, no ideas nuevas: un menú con acciones que
 /// no están en ningún requisito sería un menú que promete algo que nadie ha pedido.
+///
+/// Y ninguna vacía: el menú "Ver" que se pintaba hasta FE-077 con "mostrar panel de
+/// proyecto" y "mostrar panel de propiedades" era un menú que se abría y no podía hacer
+/// nada, porque los dos paneles siempre están en la ventana.
 pub const MENUS: &[Menu] = &[
     Menu {
         titulo: "Archivo",
@@ -42,11 +47,7 @@ pub const MENUS: &[Menu] = &[
     },
     Menu {
         titulo: "Editar",
-        acciones: &[DESHACER, REHACER, COPIAR, CORTAR, PEGAR, BUSCAR, REEMPLAZAR],
-    },
-    Menu {
-        titulo: "Ver",
-        acciones: &[PANEL_DE_PROYECTO, PANEL_DE_PROPIEDADES],
+        acciones: &[DESHACER, REHACER, BUSCAR, REEMPLAZAR],
     },
     Menu {
         titulo: "Compilar",
@@ -54,7 +55,7 @@ pub const MENUS: &[Menu] = &[
     },
 ];
 
-/// Dibuja la barra de menús en `ui`, y con ella sus cuatro menús.
+/// Dibuja la barra de menús en `ui`, y con ella los menús de la tabla.
 ///
 /// Los menús son los de [`MENUS`] y sale de esa tabla toda la barra: añadir un menú es
 /// añadir una entrada a la tabla, y no un `menu_button` suelto por el medio, que es como
@@ -204,9 +205,6 @@ mod tests {
     /// proyectos y la columna de propiedades, que están pegados a los lados (FE-010 y
     /// FE-051), y el área central, que llega al borde derecho, y lo que sale son los
     /// botones de las acciones del menú.
-    ///
-    /// Da igual que los elementos estén apagados: también se pintan, y una acción apagada
-    /// que no se pintara sería invisible en vez de desactivada.
     fn elementos(context: &egui::Context, app: &mut App, esperados: usize) -> Vec<egui::Rect> {
         let franja = franja_de_arriba(context);
 
@@ -410,29 +408,28 @@ mod tests {
     ///
     /// Esto es lo que FE-009 viene a conseguir: que un elemento de menú y un botón de la
     /// barra de herramientas pidan lo mismo porque son la misma acción, y no dos acciones
-    /// parecidas. Se abre cada menú, se pulsa cada elemento con comando y se mira lo que
-    /// ha pedido la aplicación; la parte de que el botón de la barra pida lo mismo la
+    /// parecidas. Se abre cada menú, se pulsa cada elemento con un clic de verdad y se mira
+    /// lo que ha pedido la aplicación; la parte de que el botón de la barra pida lo mismo la
     /// comprueba `acciones`, que es donde están las dos listas.
+    ///
+    /// No hay "si tiene comando" porque no hay acciones sin comando: FE-077 quitó las que
+    /// se dibujaban apagadas, así que todo lo que hay en un menú hace algo al pulsarlo.
     #[test]
     fn cada_accion_de_menu_pide_su_comando() {
         let mut con_comando = 0;
 
         for (indice_menu, menu) in MENUS.iter().enumerate() {
             for (indice_accion, accion) in menu.acciones.iter().enumerate() {
-                let Some(comando) = accion.comando else {
-                    continue;
-                };
                 con_comando += 1;
 
                 let app = pulsar_accion(indice_menu, indice_accion, menu.acciones.len());
 
                 assert_eq!(
                     app.peticiones(),
-                    [comando],
-                    "el elemento {:?} del menú {:?} tiene que pedir {:?}",
+                    [accion.comando],
+                    "el elemento {:?} del menú {:?} tiene que pedir su comando",
                     accion.nombre,
-                    menu.titulo,
-                    comando
+                    menu.titulo
                 );
             }
         }
@@ -440,40 +437,6 @@ mod tests {
         assert!(
             con_comando > 0,
             "si no hay ninguna acción con comando, este test no comprueba nada"
-        );
-    }
-
-    /// Una acción sin comando no pide nada, porque no hay nada que pedir.
-    ///
-    /// Las acciones sin comando están apagadas, y no por un descuido de la interfaz: el
-    /// core todavía no tiene ese comando. Si se pudieran pulsar y no pasara nada, el
-    /// usuario vería un botón que acepta el clic y no hace nada, que es peor que uno
-    /// apagado porque parece que MiniIDE ha hecho caso.
-    #[test]
-    fn una_accion_sin_comando_no_pide_nada() {
-        let mut sin_comando = 0;
-
-        for (indice_menu, menu) in MENUS.iter().enumerate() {
-            for (indice_accion, accion) in menu.acciones.iter().enumerate() {
-                if accion.comando.is_some() {
-                    continue;
-                }
-                sin_comando += 1;
-
-                let app = pulsar_accion(indice_menu, indice_accion, menu.acciones.len());
-
-                assert!(
-                    app.peticiones().is_empty(),
-                    "la acción {:?} no tiene comando y no puede pedir nada, y pidió {:?}",
-                    accion.nombre,
-                    app.peticiones()
-                );
-            }
-        }
-
-        assert!(
-            sin_comando > 0,
-            "si no hay ninguna acción sin comando, este test no comprueba nada"
         );
     }
 }

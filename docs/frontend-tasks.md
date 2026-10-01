@@ -389,130 +389,313 @@
 
 ## Fase 10 — Integración C# WinForms
 
-- [ ] **FE-057 — Detectar proyecto WinForms en UI**
+- [x] **FE-057 — Detectar proyecto WinForms en UI**
   - RF: RF-06, RF-07, RF-08
   - Seleccionar correctamente editor/designer disponibles.
   - Hecho cuando: abrir un proyecto C# WinForms habilita sus vistas correspondientes.
+  - Nota: `src/frontend/vistas.rs`. `Vistas` se calcula al abrir el proyecto preguntando al
+    framework que lo declara —`Supports::framework(project_type.framework())`— y no mirando
+    el lenguaje, así que el módulo no menciona ninguna tecnología y añadir un framework es
+    añadir su soporte en `supports.rs`. Da dos respuestas: si hay vista de diseño —un
+    framework sin generación de código no la tiene— y qué controles ofrece su toolbox, con
+    el nombre que tienen en ese framework. Hay un test que lee el código del módulo y falla
+    si aparece el nombre de un lenguaje o de un framework (AGENTS.md §2.4).
 
-- [ ] **FE-058 — Abrir `.cs` en editor**
+- [x] **FE-058 — Abrir `.cs` en editor**
   - RF: RF-07
   - Conectar Project Explorer con EditorView.
   - Hecho cuando: un `.cs` se abre en una pestaña y el contenido es editable.
+  - Nota: `App` guarda los documentos con `OpenTabs` del core y los archivos del proyecto con
+    `discover_files`, y `ejecutar_peticiones` resuelve `OpenDocument`, `ActivateDocument`,
+    `Save` y `CloseDocument`: los cuatro hacen falta para que abrir un documento de verdad no
+    deje la ventana y el core diciendo cosas distintas, y el diálogo de cerrar de FE-055
+    depende de los dos últimos. El archivo se busca en la lista del proyecto y no en lo que
+    se ha pulsado, porque un comando no lleva datos. Guardar y cerrar actuán sobre el
+    documento que el *core* tiene activo, que no siempre es el que la ventana tiene
+    marcado: el diálogo quita la pestaña y pide guardar en el mismo clic, y cuando se ejecuta
+    la ventana ya está enseñando la de al lado.
+  - Nota: al abrir un documento de verdad aparecieron dos fallos del editor que sus propios
+    tests no veían porque siempre lo dibujaban en un hueco con su esquina en cero. `ui.painter()`
+    pinta en coordenadas de la ventana y el editor pintaba en las suyas, así que el texto
+    salía en la esquina de arriba, encima del menú. Y egui suelta el foco de todo widget que
+    no se ha dibujado en el frame, así que el editor pedía el foco sin registrarse como
+    widget y lo perdía en el frame siguiente: de cada dos pulsaciones de teclado solo llegaba
+    una. Los dos están corregidos y cubiertos por `tests/winforms_frontend.rs`, que escribe
+    en un proyecto de verdad.
 
-- [ ] **FE-059 — Abrir diseñador WinForms**
+- [x] **FE-059 — Abrir diseñador WinForms**
   - RF: RF-08
   - Detectar recurso diseñable.
   - Hecho cuando: el usuario puede cambiar de Code a Designer para un formulario WinForms.
+  - Nota: el recurso diseñable se busca por el marcador con el que los generadores del core
+    cierran la zona que escriben —`generation::MARKER_BEGIN`—, que es lo mismo para todos los
+    frameworks: un archivo con esa zona tiene un diseño detrás y ningún otro lo tiene, diga su
+    framework lo que diga. Se busca una vez, al abrir el proyecto, y se para en el primero.
+    El interruptor `Code` / `Designer` se dibuja encima del área central y solo cuando se
+    puede pasar de una vista a otra: framework con diseñador, diseño en el proyecto y una
+    clase abierta a la que pertenezca ese diseño —FE-063 precisa este último punto—. Volver a
+    pulsarlo con el diseñador ya delante no rehace el modelo, que es lo que perdería los
+    controles colocados.
+  - Lo que sigue sin cerrar: el modelo se abre vacío. El core tiene el generador pero no un
+    lector que convierta un archivo generado en modelo, así que todavía no se recupera el
+    diseño que ya había escrito. Cargar el diseño del archivo es capacidad del core y queda
+    como tarea en `tasks.md`, no aquí.
 
-- [ ] **FE-060 — Mostrar errores de compilación C#**
+- [x] **FE-060 — Mostrar errores de compilación C#**
   - RF: RF-07, RF-11, RF-13
   - Presentar diagnósticos de .NET en la UI.
   - Hecho cuando: un error de compilación aparece con mensaje y ubicación si existe.
+  - Nota: `Operaciones` guarda los diagnósticos de la última compilación y los borra al
+    pedir la siguiente, porque son los de la anterior y el código ya puede haber cambiado.
+    `aplicar_el_resultado` es un paso aparte de `recoger` para que lo que el core dice se
+    pueda comprobar sin lanzar el SDK de .NET, que es lo que hacen sus tests y los del
+    layout. Pulsar un diagnóstico marca su fila en el explorador y pide `OpenDocument`: el
+    comando no lleva datos, así que el destino se dice marcando la fila, con la misma clave
+    que usa el explorador. Saltar a la línea es FE-072.
 
 ## Fase 11 — Integración Java Swing
 
-- [ ] **FE-061 — Detectar proyecto Swing en UI**
+- [x] **FE-061 — Detectar proyecto Swing en UI**
   - RF: RF-06, RF-09, RF-10
   - Habilitar vistas de código/diseñador apropiadas.
   - Hecho cuando: abrir un proyecto Java Swing muestra soporte de Java/Swing.
+  - Nota: no hizo falta código nuevo para esto, y esa es la comprobación de FE-057. Lo mismo
+    que habilita las vistas de un proyecto de C# las habilita las de uno de Java: `Vistas` se
+    calcula con `Supports`, sin mirar el lenguaje, así que Swing trae `JButton`, `JLabel` y
+    compañía en su toolbox y no los controles del otro framework. El árbol sí es distinto —
+    los fuentes están en `src/main/java`, tres carpetas más abajo— y se llega a ellos
+    desplegando. Todo está en `vistas.rs`, en `app.rs` y en `tests/java_swing_frontend.rs`.
 
-- [ ] **FE-062 — Abrir `.java` en editor**
+- [x] **FE-062 — Abrir `.java` en editor**
   - RF: RF-09
   - Conectar Project Explorer con EditorView.
   - Hecho cuando: un `.java` se abre y es editable.
+  - Nota: mismo camino que FE-058 y por lo mismo no hay un comando por lenguaje: el explorador
+    marca la fila, pide `OpenDocument` y la ventana abre el archivo con el lenguaje que el core
+    le da por su extensión. Lo que se comprueba aquí es lo propio de Java —que el archivo se
+    abre con su ruta entera dentro del proyecto, que se puede escribir y que lo escrito llega
+    al archivo— porque una ruta de tres niveles no es lo mismo que un archivo en la raíz.
 
-- [ ] **FE-063 — Abrir diseñador Swing**
+- [x] **FE-063 — Abrir diseñador Swing**
   - RF: RF-10
   - Detectar recurso diseñable.
   - Hecho cuando: una ventana Swing puede abrirse en Designer.
+  - Nota: aquí el diseño vive en el mismo archivo que el código —no hay un archivo generado al
+    lado como en el otro framework—, y eso obliga a precisar lo que era FE-059. `puede_diseñar`
+    ya no basta con que el proyecto tenga un diseño: tiene que ser **el diseño de la clase que
+    se está viendo**, comparando el nombre del archivo del diseño con el de la clase. Con
+    cualquier otra clase —`Main.java`, la que lanza la aplicación— el interruptor no aparece, y
+    con el criterio anterior sí y habría dejado diseñar un formulario de una clase que no es
+    ventana. Sigue sin nombres de framework: el archivo del diseño es el de la clase o el que
+    se generó al lado.
+  - Lo que sigue sin cerrar: igual que en FE-059, el modelo se abre vacío porque el core no
+    tiene un lector que convierta un archivo generado en modelo.
 
-- [ ] **FE-064 — Mostrar errores de compilación Java**
+- [x] **FE-064 — Mostrar errores de compilación Java**
   - RF: RF-09, RF-11, RF-13
   - Presentar diagnósticos de javac/JDK.
   - Hecho cuando: un error Java aparece con mensaje y ubicación si existe.
+  - Nota: la salida de `javac` entra por el mismo camino que la de `dotnet` —FE-060— porque los
+    diagnósticos los da el proveedor de la toolchain y la ventana no los distingue. Los tests
+    parsean con `JdkToolchain::parse_diagnostics` y una salida real de `javac`, así que
+    comprueban el parser del core y la ventana a la vez sin necesitar el JDK instalado.
 
 ## Fase 12 — Accesibilidad y estabilidad mínima
 
-- [ ] **FE-065 — Revisar foco de teclado**
+- [x] **FE-065 — Revisar foco de teclado**
   - RF: RF-03, RNF-11
   - Revisar foco entre editor, árbol, propiedades y output.
   - Hecho cuando: Tab/Shift+Tab y click permiten recuperar foco de cada área sin comportamientos erráticos.
+  - Nota: la revisión encontró un fallo real: el editor pedía el foco cada vez que el ratón
+    estaba encima, así que cualquier clic en un botón —en la barra, en el menú, en una fila del
+    árbol— se perdía en cuanto el puntero volvía al editor, y con él la tecla que iba a
+    activar ese botón. Ahora el foco se pide **con un clic dentro del editor**, no solo con pasar
+    por encima, y el editor se registra como widget enfocable para que egui no se lo suelte
+    (FE-058). Con eso, Tab mueve el foco a otra zona y lo que se escriba después ya no entra en
+    el documento, y un clic dentro del editor lo recupera sin cerrar nada. Es lo que comprueban
+    `escribir_solo_escribe_mientras_el_editor_tiene_el_foco` y
+    `el_tab_mueve_el_foco_y_el_texto_deja_de_llegar_al_editor`.
+  - Nota: los tests de las fases 10 y 11 escribían con el ratón encima sin clicar. Se
+    cambiaron para clicar antes, que es lo que hace un usuario, y así los tests de escritura
+    cubren también el foco.
 
-- [ ] **FE-066 — Revisar resize de paneles**
+- [x] **FE-066 — Revisar resize de paneles**
   - RF: RF-11, RNF-11
   - Validar que los paneles soportan tamaños razonables.
   - Hecho cuando: cambiar tamaño de ventana no oculta definitivamente áreas esenciales.
+  - Nota: en el tamaño mínimo que declara la ventana (640×400) siguen viéndose el menú, la
+    barra de herramientas, el explorador, las propiedades, el editor y la barra de estado: se
+    comprueba con lo que hay escrito en cada zona, que es lo que el usuario ve, y no con los
+    rectángulos de los paneles —el área central no pinta fondo, así que buscarla por su
+    rectángulo no la encuentra—.
+  - Nota: la revisión encontró el segundo fallo real: una línea más ancha que la zona se
+    pintaba entera y se metía encima de la columna de propiedades. El editor pinta ahora
+    recortado a su hueco, que es lo que deja el desplazamiento horizontal sin cambios: lo que
+    no cabe no se ve, y con la rueda se ve el resto.
 
-- [ ] **FE-067 — Evitar panic por estado de UI incompleto**
+- [x] **FE-067 — Evitar panic por estado de UI incompleto**
   - RF: RF-01, RNF-06
   - Revisar `Option`/estados de transición.
   - Hecho cuando: abrir/cerrar proyecto/documento mientras no hay selección no provoca panic en pruebas relevantes.
+  - Nota: los cuatro comandos de documento —abrir, activar, guardar y cerrar— se ejecutan
+    contra una ventana sin proyecto, sin selección y sin documentos; se abre un documento que
+    no está en el proyecto; se cambia de proyecto con documentos del anterior abiertos; se
+    escribe con todos los documentos cerrados; se abre un proyecto sin archivos; y se pide el
+    diseñador sin ningún documento. Ninguno se cae, y los que no pueden hacer su cosa dicen
+    por qué en la barra en vez de perder la petición en silencio, que es lo que hace parecer un
+    IDE que no responde.
 
-- [ ] **FE-068 — Revisar mensajes vacíos/error**
+- [x] **FE-068 — Revisar mensajes vacíos/error**
   - RF: RF-13, RF-16
   - Asegurar estados claros para idle, sin proyecto, sin archivo y toolchain ausente.
   - Hecho cuando: cada estado básico tiene una representación visible comprensible.
+  - Nota: la barra decía "Sin proyecto" y "Sin documento" siempre, porque en FE-005 todavía no
+    había forma de saber qué había abierto. Desde FE-058 y FE-062 sí lo hay, así que ahora dice
+    el nombre del proyecto y el del documento que se está viendo, y solo dice "Sin proyecto" y
+    "Sin documento" cuando no hay. Los cuatro estados básicos —nada abierto, con proyecto, con
+    documento y con la herramienta que falta— tienen cada uno su texto, comprobados en
+    `status.rs` y mirando la barra de verdad en `layout.rs`.
 
 ## Fase 13 — Tests del frontend
 
-- [ ] **FE-069 — Tests de mapeo evento → comando**
+- [x] **FE-069 — Tests de mapeo evento → comando**
   - RF: RF-14
   - Probar atajos/acciones principales.
   - Hecho cuando: los tests verifican que cada interacción produce el comando esperado.
+  - Nota: cada atajo de `ATAJOS` tiene su test en `frontend/atajos.rs` con pulsaciones de
+    verdad, y cada acción de `frontend/acciones.rs` se comprueba con un clic que acaba
+    pidiendo su comando.
 
-- [ ] **FE-070 — Tests de estado de tabs**
+- [x] **FE-070 — Tests de estado de tabs**
   - RF: RF-04
   - Probar selección/cierre/estado modificado.
   - Hecho cuando: los casos principales de tabs están cubiertos automáticamente.
+  - Nota: cubren la pestaña que se marca, el asterisco al escribir, el cierre con diálogo y el
+    descarte en `frontend/tabs.rs`, `frontend/dialogos.rs` y `frontend/layout.rs`. Al
+    escribirlos apareció un fallo real: el área interactiva del editor arrancaba en
+    `ui.min_rect().min`, tapaba la tira de pestañas y se comía los clics de las etiquetas y de
+    la `×`. Ahora empieza en `ui.cursor().min`.
 
-- [ ] **FE-071 — Tests de estados Build/Run**
+- [x] **FE-071 — Tests de estados Build/Run**
   - RF: RF-11, RF-12
   - Probar transiciones de UI ante resultados del core.
   - Hecho cuando: los estados Idle/Running/Failed/Exited tienen cobertura.
+  - Nota: los cuatro estados de compilación y los cuatro de ejecución se recorren uno detrás de
+    otro mirando la barra de estado de verdad, en `frontend/layout.rs`. Los de ejecución lanzan
+    un proceso real y van marcados con `#[ignore]`, como los del core.
 
-- [ ] **FE-072 — Tests de navegación desde diagnóstico**
+- [x] **FE-072 — Tests de navegación desde diagnóstico**
   - RF: RF-13
   - Probar mapping de archivo/línea a comando de navegación.
   - Hecho cuando: un diagnóstico con ubicación produce el destino esperado.
+  - Nota: al pulsar un diagnóstico con ubicación se anota el destino —archivo y línea— en el
+    estado visual y se pide abrir el documento; `App` lo consume al abrirlo y mueve el cursor
+    a esa línea. Está en `frontend/diagnosticos.rs` (el destino) y en `frontend/app.rs` (el
+    cursor, incluso con el archivo ya abierto y sin tocar otro documento).
 
-- [ ] **FE-073 — Integration test UI → Core para Save**
+- [x] **FE-073 — Integration test UI → Core para Save**
   - RF: RF-02, RF-14
   - Verificar que la UI usa el mismo comando de guardado que el core.
   - Hecho cuando: el test confirma persistencia sin depender de un botón concreto.
+  - Nota: en `tests/frontend_integration.rs`. Se guarda con Ctrl+S y con el comando, nunca
+    pulsando el botón, y lo que se mira es el archivo del disco: es el mismo camino para el
+    atajo, el menú y el botón porque los tres piden `Command::Save`.
 
-- [ ] **FE-074 — Integration test UI → Core para Build/Run/Stop**
+- [x] **FE-074 — Integration test UI → Core para Build/Run/Stop**
   - RF: RF-11, RF-12, RF-14
   - Verificar comandos y actualización de estados.
   - Hecho cuando: el flujo completo pasa sin bloqueo de UI.
+  - Nota: en `tests/frontend_integration.rs`, pulsando los botones de la barra y mirando lo que
+    se ve en ella. El flujo completo usa un toolchain de prueba que lanza `cmd`, porque sin
+    lanzar un proceso no se puede recorrer el camino entero, y va marcado con `#[ignore]`. El
+    caso de que la ventana no se congela no necesita procesos y corre siempre.
 
-- [ ] **FE-075 — Smoke test del frontend**
+- [x] **FE-075 — Smoke test del frontend**
   - RF: RF-01 a RF-16
   - Ejecutar flujo principal mínimo.
   - Hecho cuando: Start → Open/Create → Edit → Save → Build → Run → Stop es reproducible sin fallos conocidos.
+  - Nota: `el_flujo_principal_se_puede_repetir_de_principio_a_fin` recorre el flujo entero con
+    un proyecto de verdad, abre un archivo del árbol, escribe, guarda con el atajo, compila,
+    ejecuta y para, y comprueba que el archivo del disco tiene lo escrito y que la ventana
+    sigue en pie. Va marcado con `#[ignore]` porque compilar y ejecutar lanzan procesos de
+    verdad.
 
 ## Fase 14 — Pulido MVP
 
-- [ ] **FE-076 — Revisar navegación y nomenclatura**
+- [x] **FE-076 — Revisar navegación y nomenclatura**
   - RF: RNF-11, RNF-12
   - Unificar textos y nombres de comandos visibles.
   - Hecho cuando: acciones equivalentes usan el mismo nombre en menú, toolbar y mensajes.
+  - Nota: los menús y la barra ya compartían las mismas `Accion`; lo que se unifica aquí es
+    lo que estaba escrito a mano. El botón de guardar del diálogo de cerrar y el texto del
+    campo de búsqueda salen ahora de `GUARDAR.nombre` y `BUSCAR.nombre`, y se ha quitado el
+    `nombre()` de `VistaCentral`, que decía "Editor" y "Diseñador" mientras el conmutador dice
+    "Code" y "Designer". `tests/frontend_boundaries.rs` lo comprueba: ningún módulo del
+    frontend puede escribir un nombre de acción por su cuenta. Los títulos de los menús se
+    dejan fuera porque son nombres de sección y no de acción.
 
-- [ ] **FE-077 — Reducir UI innecesaria**
+- [x] **FE-077 — Reducir UI innecesaria**
   - RF: RNF-11
   - Eliminar controles o paneles sin función MVP.
   - Hecho cuando: cada elemento visible tiene una función definida.
+  - Nota: el menú Editar ofrecía copiar, cortar y pegar, y el menú Ver tenía "mostrar panel
+    de proyecto" y "mostrar panel de propiedades"; los cinco estaban apagados porque el core
+    no tiene esos comandos, y los dos paneles siempre están en la ventana. Se han quitado el
+    menú Ver entero y las tres acciones del portapapeles, también del menú contextual del
+    editor -copiar, cortar y pegar siguen funcionando con las teclas del sistema, que es de
+    donde los trae egui-. `Accion` ya no puede llevar un comando que no existe, así que un
+    botón apagado no puede volver a entrar ni por descuido.
 
-- [ ] **FE-078 — Revisar rendimiento visual básico**
+- [x] **FE-078 — Revisar rendimiento visual básico**
   - RF: RF-03, RNF-04, RNF-05
   - Revisar editor, output y designer con contenido de prueba razonable.
   - Hecho cuando: ninguna vista principal provoca congelación visible durante interacción normal.
+  - Nota: el editor ya pintaba solo las líneas que caben, y ahora está comprobado con un
+    archivo de veinte mil líneas. La salida no: pintaba un widget por línea, así que una
+    compilación de cinco mil líneas medía cinco mil textos en cada frame. Ahora usa un scroll
+    area que solo construye las líneas visibles y que se queda pegado al final, que es donde
+    el proceso falla y lo dice. El diseñador no se puede virtualizar -es un lienzo con
+    posiciones absolutas-, pero sí se ha comprobado que mil controles cuestan dos o tres
+    veces lo mismo que cuatro.
 
-- [ ] **FE-079 — Revisión final de arquitectura frontend**
+- [x] **FE-079 — Revisión final de arquitectura frontend**
   - RF: RNF-02, RNF-03, RNF-08
   - Verificar separación UI/core.
   - Hecho cuando: ningún widget contiene lógica de build, toolchain o generación de código específica que debería pertenecer al core/proveedor.
+  - Nota: la ventana pide y enseña; compilar, ejecutar, arrancar procesos y escribir archivos
+    son de `operaciones` y del core. `tests/frontend_boundaries.rs` lo deja anotado para que
+    no se deshaga: ningún módulo del frontend lanza procesos ni nombra una herramienta,
+    solo `app` y `operaciones` conocen el build y el toolchain, solo `operaciones` arranca una
+    compilación y decide si ha ido bien, y nadie escribe archivos desde la ventana.
 
-- [ ] **FE-080 — Cerrar frontend MVP**
+- [x] **FE-080 — Cerrar frontend MVP**
   - RF: RF-01 a RF-16
   - Ejecutar checklist final y documentación.
   - Hecho cuando: las funciones frontend previstas están operativas, los tests pasan y no hay tareas fuera de alcance mezcladas en el MVP.
+  - Nota: el checklist de cierre está al final de este documento. La suite completa pasa, con
+    los tests que lanzan procesos de verdad marcados con `#[ignore]` y ejecutados aparte.
+
+## Cierre del frontend MVP
+
+Los diez criterios de aceptación de `docs/frontend-plan.md` §18, con dónde se mira cada uno:
+
+| Criterio | Dónde |
+| --- | --- |
+| Ventana estable con eframe | `app::tests::the_window_content_can_be_drawn_without_a_window` y `frontend_integration.rs`, que escribe en la ventana |
+| Menú, explorador, editor, output y estado | `layout::tests::la_ventana_aguanta_el_tamano_minimo_sin_que_desaparezca_nada` |
+| Crear y abrir proyecto | `explorador::tests` para el árbol y `app::tests` para abrir, en `tests/winforms_frontend.rs` y `tests/java_swing_frontend.rs` |
+| Abrir y editar un documento | `explorador::tests::seleccionar_un_archivo_pide_abrirlo_exactamente_una_vez` y `editor::tests` |
+| Guardar desde comando, menú y atajo | `frontend_integration.rs::guardar_dos_veces_por_caminos_distintos_llega_al_mismo_core` y `acciones::tests` |
+| C# WinForms desde la UI | `tests/winforms_frontend.rs` y `tests/winforms_end_to_end.rs` |
+| Java Swing desde la UI | `tests/java_swing_frontend.rs` y `tests/java_swing_end_to_end.rs` |
+| Diseñador con componentes básicos | `diseniador::tests` y `propiedades::tests` |
+| Build, Run y Stop sin congelar | `frontend_integration.rs::la_ventana_se_sigue_dibujando_mientras_compila` y `operaciones::tests` |
+| Diagnósticos en su panel | `diagnosticos::tests` y `layout::tests::los_errores_de_la_compilacion_se_ensenan_abajo_con_donde_estan` |
+
+Fuera de alcance: el frontend no ha crecido más allá de las fases 1 a 14. Lo que el MVP no
+prevía -docking, más de dos vistas, refactorización avanzada, atajos configurables- sigue sin
+estar, y los dos menús y los botones que sí están son los que el plan pide.
+
+Con esto el frontend queda cerrado. Lo que viene después -todo lo anterior al core, que ya
+existe- no se toca desde aquí: `AGENTS.md` §9 dice que un cambio grande para resolver una tarea
+pequeña no es un cambio de arquitectura, es otra cosa.

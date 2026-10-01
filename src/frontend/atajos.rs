@@ -183,11 +183,7 @@ pub fn aplicar(ui: &egui::Ui, efecto: Efecto, app: &mut App) {
     let _ = ui;
 
     match efecto {
-        Efecto::Pedir(accion) => {
-            if let Some(comando) = accion.comando {
-                app.emitir(comando);
-            }
-        }
+        Efecto::Pedir(accion) => app.emitir(accion.comando),
         Efecto::Abrir(dialogo) => app.state_mut().abrir_busqueda(dialogo.tiene_reemplazo()),
     }
 }
@@ -472,6 +468,82 @@ mod tests {
                 "el botón de {nombre:?} de la barra tiene que ser la misma acción"
             );
         }
+    }
+
+    /// Cada atajo de la tabla produce lo que dice, y la tabla entera está probada. FE-069.
+    ///
+    /// Los tests de arriba comprueban atajos sueltos, uno por uno, y por eso un atajo nuevo se
+    /// podría añadir a la tabla sin que nadie lo probara: la tabla crecería y el conjunto de
+    /// tests se quedaría igual. Aquí se recorre la tabla entera y cada fila tiene que hacer lo
+    /// que dice a través del camino de verdad —una pulsación por la ventana—, así que lo que
+    /// no esté comprobado es que la fila no esté en la tabla.
+    ///
+    /// Se comprueba por filas y no contando: contar comprobaría que hay ocho filas, no que las
+    /// ocho hagan lo que deben.
+    #[test]
+    fn cada_atajo_de_la_tabla_hace_lo_que_dice() {
+        for atajo in ATAJOS {
+            let mut app = App::new();
+            let Teclas { ctrl, shift } = atajo.teclas;
+
+            ventana(&mut app, &pulsar_con(atajo.tecla, ctrl, shift));
+
+            match atajo.efecto {
+                super::Efecto::Pedir(accion) => assert_eq!(
+                    app.peticiones(),
+                    vec![accion.comando],
+                    "el atajo de {atajo:?} tiene que pedir lo que dice su acción"
+                ),
+                super::Efecto::Abrir(_) => assert!(
+                    app.peticiones().is_empty(),
+                    "el atajo de {atajo:?} abre un diálogo, que no es un comando: {:?}",
+                    app.peticiones()
+                ),
+            }
+        }
+    }
+
+    /// Ningún atajo se queda sin probar. FE-069.
+    ///
+    /// Es la otra mitad del test anterior y va aparte porque es la que falla cuando alguien
+    /// añade una fila a la tabla sin escribir su caso: el recorrido anterior seguiría en verde
+    /// porque comprobaría la fila nueva contra sí misma. Aquí la lista de atajos comprobados a
+    /// mano tiene que ser la tabla entera, y si no lo es el test dice cuál falta.
+    #[test]
+    fn ningun_atajo_se_queda_sin_probar() {
+        let comprobados: Vec<(egui::Key, Teclas)> = vec![
+            (egui::Key::S, CTRL),
+            (egui::Key::Z, CTRL),
+            (egui::Key::Y, CTRL),
+            (egui::Key::F, CTRL),
+            (egui::Key::H, CTRL),
+            (egui::Key::B, CTRL),
+            (egui::Key::F5, super::NINGUNA),
+            (egui::Key::F5, super::SHIFT),
+        ];
+
+        let en_la_tabla: Vec<(egui::Key, Teclas)> = ATAJOS
+            .iter()
+            .map(|atajo| (atajo.tecla, atajo.teclas))
+            .collect();
+
+        let sin_probar: Vec<(egui::Key, Teclas)> = en_la_tabla
+            .iter()
+            .filter(|atajo| !comprobados.contains(atajo))
+            .copied()
+            .collect();
+
+        assert!(
+            sin_probar.is_empty(),
+            "hay atajos en la tabla que ningún test comprueba uno por uno: {sin_probar:?}. \
+             O se quita el atajo de la lista de arriba, o se escribe su test: la lista es \
+             para que un atajo no se quede sin mirar."
+        );
+        assert_eq!(
+            comprobados.len(),
+            en_la_tabla.len(),
+            "y la lista no puede tener atajos que no estén en la tabla: {comprobados:?}"
+        );
     }
 
     /// Ctrl no aplasta a Shift, ni al revés.

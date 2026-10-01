@@ -1,0 +1,5 @@
+# Las referencias golden son la salida exacta de los generadores y se comparan
+# byte a byte. `core.autocrlf` esta en `true` en este repositorio, asi que sin
+# esto el archivo volveria del repositorio con `CRLF` y todos los golden tests
+# fallarian sin que hubiera cambiado el generador.
+tests/golden/** text eol=lf

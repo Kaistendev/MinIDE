@@ -1,8 +1,9 @@
 //! La lista de diagnósticos: lo que el core ha encontrado en el proyecto.
 //!
 //! Cada diagnóstico se ve con su gravedad, su archivo y su línea si los tiene, y su
-//! mensaje. Pulsar uno con sitio pide abrir ese archivo, que es lo que se puede pedir
-//! desde aquí: la línea va en la petición, que es de la de abrir un documento.
+//! mensaje. Pulsar uno con sitio pide abrir ese archivo y lo deja marcado en el explorador,
+//! que es lo que se puede pedir desde aquí: un comando no lleva datos, así que el archivo al
+//! que se va se dice marcando su fila, y la línea a la que salta la navegación es de FE-072.
 //!
 //! Los diagnósticos son del core y aquí no se tocan: se muestran tal cual, con su
 //! gravedad y su posición. Lo único que se hace es decidir si se pueden pulsar, que es si
@@ -33,18 +34,30 @@ pub fn panel(ui: &mut egui::Ui, diagnosticos: &[Diagnostic], app: &mut App) {
 /// Se dibuja entero como un botón y no con un botón y un texto al lado porque un
 /// diagnóstico se pulsa entero: pedir la navegación por pulsar en el mensaje y no por
 /// pulsar en la línea sería fallar en el sitio donde se mira.
+///
+/// Pulsar uno con sitio pide abrir el archivo que señala, lo deja seleccionado en el
+/// explorador con el mismo nombre de fila que usa allí (FE-060) y anota a qué línea de ese
+/// archivo hay que ir (FE-072). Son las tres cosas porque el comando no lleva datos —es un
+/// nombre de operación, no un destino— y es quien lo ejecuta quien mira qué fila está marcada
+/// y a qué línea se va: si solo se pidiera abrir el archivo sin marcarlo, el explorador
+/// seguiría enseñando como seleccionado otro archivo y el usuario no vería a dónde ha ido; y
+/// si no se anotara la línea, el cursor se quedaría al principio del archivo.
 fn fila(ui: &mut egui::Ui, diagnostico: &Diagnostic, app: &mut App) {
     let texto = texto_de(diagnostico);
-    let tiene_sitio = diagnostico.location().is_some();
-    let respuesta = if tiene_sitio {
-        ui.button(texto)
-    } else {
-        ui.add_enabled(false, egui::Button::new(texto))
+    let Some(sitio) = diagnostico.location() else {
+        ui.add_enabled(false, egui::Button::new(texto));
+
+        return;
     };
 
-    if respuesta.clicked() {
-        app.emitir(Command::OpenDocument);
+    if !ui.button(texto).clicked() {
+        return;
     }
+
+    let clave = super::explorador::clave(sitio.file().as_path());
+    app.state_mut().seleccionar(&clave);
+    app.state_mut().ir_a(clave, sitio.position().line());
+    app.emitir(Command::OpenDocument);
 }
 
 /// Lo que se ve de un diagnóstico: su gravedad, dónde está y qué dice.
@@ -276,6 +289,96 @@ mod tests {
             app.peticiones(),
             vec![Command::OpenDocument],
             "pulsar un diagnóstico pide abrir el archivo donde está"
+        );
+    }
+
+    /// Pulsar un diagnóstico deja marcado en el explorador el archivo que señala. FE-060.
+    ///
+    /// El comando que se pide es el mismo de siempre —abrir un documento— porque no lleva
+    /// datos: es un nombre de operación y no un destino. Por eso el archivo al que hay que ir
+    /// tiene que quedar marcado con la misma clave que el explorador usa para sus filas: si
+    /// uno de los dos lo nombrara de otra manera, el explorador no reconocería la fila y el
+    /// usuario vería que ha pulsado un error y que no pasa nada.
+    #[test]
+    fn pulsar_un_diagnostico_deja_marcado_el_archivo_que_senala() {
+        let mut app = App::new();
+        let context = egui::Context::default();
+        let diagnosticos = [con_sitio("no se encuentra Form")];
+
+        let (rectangulos, _) = pintado(&context, &mut app, &diagnosticos, &[]);
+        let fila = rectangulos
+            .first()
+            .copied()
+            .expect("el diagnóstico se pinta");
+
+        let (pulsar, soltar) = clic(fila.center());
+        pintado(&context, &mut app, &diagnosticos, &pulsar);
+        pintado(&context, &mut app, &diagnosticos, &soltar);
+
+        assert_eq!(
+            app.state().seleccion(),
+            Some("src/Form1.cs"),
+            "el archivo del error es el que queda marcado en el explorador"
+        );
+        assert_eq!(
+            app.peticiones(),
+            vec![Command::OpenDocument],
+            "y es el abrir ese documento lo que se pide"
+        );
+    }
+
+    /// Pulsar un diagnóstico con ubicación anota a qué archivo y a qué línea hay que ir. FE-072.
+    ///
+    /// Es lo que convierte "pulsar un error" en "ver el error": el comando que se pide no
+    /// lleva la línea, porque `Command::OpenDocument` es un nombre de operación y no un
+    /// destino, así que la línea tiene que quedarse escrita en la ventana. Sin esto, abrir el
+    /// archivo dejaría el cursor al principio y el usuario tendría que buscarse el error él.
+    #[test]
+    fn pulsar_un_diagnostico_con_ubicacion_anota_el_archivo_y_la_linea() {
+        let mut app = App::new();
+        let context = egui::Context::default();
+        let diagnosticos = [con_sitio("no se encuentra Form")];
+
+        let (rectangulos, _) = pintado(&context, &mut app, &diagnosticos, &[]);
+        let fila = rectangulos
+            .first()
+            .copied()
+            .expect("el diagnóstico se pinta");
+
+        let (pulsar, soltar) = clic(fila.center());
+        pintado(&context, &mut app, &diagnosticos, &pulsar);
+        pintado(&context, &mut app, &diagnosticos, &soltar);
+
+        let destino = app.state().destino().expect("hay un destino pendiente");
+        assert_eq!(destino.ruta(), "src/Form1.cs", "el destino es su archivo");
+        assert_eq!(
+            destino.linea(),
+            11,
+            "y su línea tal como la cuenta el core, desde cero"
+        );
+    }
+
+    /// Pulsar un diagnóstico sin ubicación no anota ningún destino. FE-072.
+    ///
+    /// Un problema del proyecto entero no tiene archivo al que ir, así que no puede dejar un
+    /// destino a medias: si lo dejaba, el siguiente documento que se abriera —el que fuera—
+    /// llevaría el cursor a una línea de otro archivo que el usuario no había pedido.
+    #[test]
+    fn pulsar_un_diagnostico_sin_ubicacion_no_anota_destino() {
+        let mut app = App::new();
+        let context = egui::Context::default();
+        let diagnosticos = [sin_sitio("falta el paquete NuGet")];
+
+        // La fila se pinta pero no se puede pulsar, así que el destino solo se puede anotar
+        // pulsándola. Sin fila pulsable no hay destino, y eso es lo que se comprueba.
+        let (pulsar, soltar) = clic(egui::pos2(ANCHO / 2.0, ALTO_DE_LA_LISTA / 2.0));
+        pintado(&context, &mut app, &diagnosticos, &pulsar);
+        pintado(&context, &mut app, &diagnosticos, &soltar);
+
+        assert_eq!(
+            app.state().destino(),
+            None,
+            "un error sin archivo no puede decir a dónde ir"
         );
     }
 

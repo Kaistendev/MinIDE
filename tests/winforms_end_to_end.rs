@@ -14,11 +14,13 @@
 //! cargo test --test winforms_end_to_end -- --ignored
 //! ```
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use miniide::build::build_with;
 use miniide::core::ProjectType;
+use miniide::document::TextPosition;
+use miniide::editor::{Document, DocumentPath, Tab};
 use miniide::framework::WinFormsModel;
 use miniide::generation::WinFormsGenerator;
 use miniide::project::Project;
@@ -36,6 +38,10 @@ fn project_root(name: &str) -> PathBuf {
 }
 
 /// Un formulario con los cuatro controles minimos, con sus propiedades puestas.
+///
+/// El panel se oculta y se desactiva para que el codigo generado lleve banderas de
+/// verdad: si el generador las escribiera entrecomilladas, `Visible = "false"` no
+/// compilaria y este flujo lo diria en el sitio.
 fn a_form() -> WinFormsModel {
     let mut form = WinFormsModel::new("MainForm", "Formulario de prueba", 640, 480);
 
@@ -46,6 +52,8 @@ fn a_form() -> WinFormsModel {
         .unwrap();
     form.add_control("rootPanel", "Panel", 8, 70, 400, 200)
         .unwrap();
+    form.set_visible("rootPanel", false).unwrap();
+    form.set_enabled("rootPanel", false).unwrap();
     form.add_control("okButton", "Button", 312, 280, 96, 30)
         .unwrap();
     form.set_text("okButton", "Aceptar").unwrap();
@@ -53,14 +61,45 @@ fn a_form() -> WinFormsModel {
     form
 }
 
-/// Crea el proyecto de la plantilla y le escribe el diseño de `form`.
+/// Abre el archivo del disenador en una pestana, le anade una linea al final y lo
+/// guarda.
+///
+/// Es el paso de editar del flujo de T-089: el diseno se aplica despues sobre el
+/// archivo que el usuario ha tocado, no sobre el que salio de la plantilla.
+fn edit_the_designer_file(path: &Path) {
+    let source = std::fs::read_to_string(path).expect("el archivo del disenador de la plantilla");
+    let mut tab = Tab::new(
+        DocumentPath::new(path).expect("una ruta de documento"),
+        Document::new(source),
+    );
+    let end = end_of(tab.document().buffer().text());
+
+    tab.document_mut()
+        .insert(end, "// una linea escrita a mano\n")
+        .expect("se escribe la linea del usuario");
+
+    assert!(tab.is_modified());
+    tab.save().expect("se guarda el archivo editado");
+}
+
+/// La posicion del final de un texto.
+fn end_of(text: &str) -> TextPosition {
+    let lines: Vec<&str> = text.split('\n').collect();
+    let last = lines.last().copied().unwrap_or_default();
+
+    TextPosition::new((lines.len() - 1) as u32, last.len() as u32)
+}
+
+/// Crea el proyecto de la plantilla, edita el archivo del disenador y le escribe el
+/// diseño de `form`: crear → editar → diseñar.
 fn created_with_design(name: &str) -> (Project, PathBuf) {
     let root = project_root(name);
     let project = create_project(ProjectType::CSharpWinForms, &root).expect("proyecto nuevo");
     let designer = root.join(DESIGNER_FILE);
 
-    let source =
-        std::fs::read_to_string(&designer).expect("el archivo del disenador de la plantilla");
+    edit_the_designer_file(&designer);
+
+    let source = std::fs::read_to_string(&designer).expect("el archivo del disenador ya editado");
     let generated = WinFormsGenerator
         .apply_to(a_form().model(), &source)
         .expect("el diseño se escribe en la zona");

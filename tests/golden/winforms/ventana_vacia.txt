@@ -1,0 +1,7 @@
+        private void InitializeComponent()
+        {
+            this.SuspendLayout();
+            this.ClientSize = new System.Drawing.Size(640, 480);
+            this.Text = "Formulario principal";
+            this.ResumeLayout(false);
+        }

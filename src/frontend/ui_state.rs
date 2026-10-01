@@ -16,7 +16,7 @@
 use std::collections::BTreeSet;
 
 use super::dialogos::Dialogo;
-use super::tabs::Pestana;
+use crate::frontend::tabs::Pestana;
 
 /// El estado visual de la ventana.
 ///
@@ -96,12 +96,99 @@ pub struct UiState {
     /// cuándo la hace son de la ventana. Lo que hay dentro no es del dominio: una ruta o un
     /// mensaje, no el documento ni el error.
     dialogo: Option<Dialogo>,
+    /// A qué archivo y a qué línea hay que ir, si hay algo pendiente. FE-072.
+    ///
+    /// Es un destino y no un salto ya hecho porque el comando que lo dispara —abrir un
+    /// documento— no lleva datos: el archivo al que hay que ir se dice marcando su fila, como
+    /// con cualquier otro. Lo que la ventana guarda aquí es la línea, que no cabe en una fila
+    /// marcada, y el archivo, para saber a cuál de los documentos abiertos pertenece el
+    /// destino cuando el documento se abra.
+    ///
+    /// Vive en el estado visual y no en el core porque es una intención de la ventana, como
+    /// la fila seleccionada: lo que el core tiene es el documento con su cursor, y a dónde se
+    /// quiere saltar es de quien lo ha pedido.
+    destino: Option<Destino>,
+}
+
+/// A qué archivo y a qué línea se va cuando se abra. FE-072.
+///
+/// Es una ruta y una línea, y no el documento, porque el documento al que se va puede estar
+/// cerrado: el destino se pide antes de abrirlo, que es lo que hace la lista de diagnósticos
+/// al pulsar un error de un archivo que nadie tiene abierto.
+///
+/// La línea es la del core, contada desde cero, y no la que se ve en pantalla, que se cuenta
+/// desde uno: si aquí se sumara el uno, un error en la primera línea llevaría el cursor a la
+/// segunda, y el usuario buscaría el error una línea más abajo de donde está.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Destino {
+    /// La clave del archivo, la misma que usan las pestañas y el explorador.
+    ruta: String,
+    /// La línea, contada desde cero como las del core.
+    linea: u32,
+}
+
+impl Destino {
+    /// El destino al archivo de `ruta`, en la `linea` de cero.
+    pub fn new(ruta: impl Into<String>, linea: u32) -> Self {
+        Self {
+            ruta: ruta.into(),
+            linea,
+        }
+    }
+
+    /// La clave del archivo al que hay que ir.
+    pub fn ruta(&self) -> &str {
+        &self.ruta
+    }
+
+    /// La línea a la que hay que ir, contada desde cero.
+    pub fn linea(&self) -> u32 {
+        self.linea
+    }
+}
+
+/// El desplazamiento del editor en los dos ejes, en puntos.
+///
+/// Va en su propio tipo y no sueltos porque el editor lo necesita *entregado y devuelto* en
+/// el mismo frame: pinta el documento que le presta el core y, a la vez, guarda por dónde
+/// se ha desplazado, que es estado de la ventana. Preguntar por el estado de la ventana con
+/// el documento en la mano y escribir en él son dos préstamos que no pueden ser a la vez, así
+/// que quien lo pinta lo recibe copiado y lo devuelve escrito (FE-058).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Desplazamiento {
+    vertical: f32,
+    horizontal: f32,
+}
+
+impl Desplazamiento {
+    /// Un desplazamiento de `vertical` y `horizontal` puntos.
+    pub fn new(vertical: f32, horizontal: f32) -> Self {
+        Self {
+            vertical,
+            horizontal,
+        }
+    }
+
+    /// Cuánto se ha desplazado en vertical, en puntos.
+    pub fn vertical(self) -> f32 {
+        self.vertical
+    }
+
+    /// Cuánto se ha desplazado de lado, en puntos.
+    pub fn horizontal(self) -> f32 {
+        self.horizontal
+    }
 }
 
 /// Lo que se está viendo en el área central.
 ///
 /// Son dos y no más porque son las dos que el plan de la ventana describe. Añadir una tercera
 /// sería un docking, y `docs/frontend-plan.md` §13 dice que en el MVP no.
+///
+/// No hay un `nombre()` aquí a propósito: lo que pone el conmutor de vistas son "Code" y
+/// "Designer", y están en `layout`, que es donde están los botones. Un nombre de vista en dos
+/// sitios es un nombre que se queda atrás en uno de los dos, y el día que el conmutador
+/// dijera una cosa y el estado otra no se sabría cuál se ve (FE-076).
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum VistaCentral {
     /// El editor de código. Es lo que se ve al abrir MiniIDE.
@@ -109,16 +196,6 @@ pub enum VistaCentral {
     Editor,
     /// El diseñador visual. FE-044.
     Diseniador,
-}
-
-impl VistaCentral {
-    /// Lo que dice la ventana mientras la zona no tenga contenido.
-    pub fn nombre(self) -> &'static str {
-        match self {
-            Self::Editor => "Editor",
-            Self::Diseniador => "Diseñador",
-        }
-    }
 }
 
 /// La búsqueda que se está haciendo: qué se busca y con qué se reemplaza.
@@ -241,6 +318,39 @@ impl UiState {
         self.seleccion = Some(ruta.to_owned());
     }
 
+    /// A dónde hay que ir cuando se abra un documento, si hay algo pendiente. FE-072.
+    ///
+    /// Lo normal es que no haya nada: un destino se pone al pulsar un diagnóstico y se
+    /// consume en cuanto el documento correspondiente está abierto, así que una ventana en la
+    /// que no se ha pulsado ningún error no tiene a dónde ir.
+    pub fn destino(&self) -> Option<&Destino> {
+        self.destino.as_ref()
+    }
+
+    /// Anota que hay que ir a `ruta`, en la `linea` de cero. FE-072.
+    ///
+    /// Sustituye el destino que hubiera porque solo se puede ir a un sitio: si el usuario
+    /// pulsa un error y luego otro sin haber EXPECTADO al primero, al segundo se va.
+    pub fn ir_a(&mut self, ruta: impl Into<String>, linea: u32) {
+        self.destino = Some(Destino::new(ruta, linea));
+    }
+
+    /// El destino pendiente si es el del archivo de `ruta`, y lo quita.
+    ///
+    /// Se consume aquí y no en quien lo puso porque el destino tiene que desaparecer en cuanto
+    /// se cumple: si se quedara, volver a abrir el mismo archivo por el explorador llevaría al
+    /// cursor a un error que ya se está arreglando, y saltar solo tiene sentido la primera vez.
+    ///
+    /// Devuelve el destino en vez de aplicarlo porque el cursor es del documento y el documento
+    /// es del core: quien lo mueve es quien lo tiene en la mano, que es la aplicación.
+    pub fn tomar_el_destino_de(&mut self, ruta: &str) -> Option<Destino> {
+        if self.destino.as_ref()?.ruta() != ruta {
+            return None;
+        }
+
+        self.destino.take()
+    }
+
     /// Si la carpeta de `ruta` está abierta en el árbol del explorador.
     ///
     /// Una carpeta que no está en la lista está cerrada, y una ventana nueva no tiene
@@ -274,6 +384,21 @@ impl UiState {
     /// La pestaña que se está viendo, si hay alguna.
     pub fn pestana_activa(&self) -> Option<&str> {
         self.pestana_activa.as_deref()
+    }
+
+    /// El nombre del documento que se está viendo, si hay alguno.
+    ///
+    /// Es lo que enseña la barra de estado y no la ruta, porque en una barra de sitio no cabe
+    /// una ruta y lo que se lee de un vistazo es el nombre del archivo. Sale de la lista de
+    /// pestañas y no de la ruta guardada para no mirar en dos sitios: si la pestaña no está,
+    /// no hay documento, que es lo que dice la barra (FE-068).
+    pub fn documento_activo(&self) -> Option<&str> {
+        let ruta = self.pestana_activa.as_deref()?;
+
+        self.pestanas
+            .iter()
+            .find(|pestana| pestana.ruta() == ruta)
+            .map(Pestana::nombre)
     }
 
     /// Enseña la pestaña de `pestana` y la deja a la vista.
@@ -368,6 +493,20 @@ impl UiState {
     /// Deja el editor desplazado `puntos` de lado.
     pub fn set_desplazamiento_horizontal(&mut self, puntos: f32) {
         self.desplazamiento_horizontal = puntos;
+    }
+
+    /// Los dos desplazamientos de golpe, que es como los necesita el editor.
+    pub fn desplazamiento(&self) -> Desplazamiento {
+        Desplazamiento {
+            vertical: self.desplazamiento_vertical,
+            horizontal: self.desplazamiento_horizontal,
+        }
+    }
+
+    /// Deja el editor desplazado como dice `desplazamiento`, en los dos ejes.
+    pub fn set_desplazamiento(&mut self, desplazamiento: Desplazamiento) {
+        self.desplazamiento_vertical = desplazamiento.vertical;
+        self.desplazamiento_horizontal = desplazamiento.horizontal;
     }
 
     /// Abre la búsqueda, con reemplazo si `con_reemplazo` es cierto.
@@ -533,6 +672,78 @@ mod tests {
         assert!(
             state.esta_expandida("docs"),
             "cerrar una no cierra las otras"
+        );
+    }
+
+    /// El desplazamiento se lee y se escribe en los dos ejes a la vez.
+    ///
+    /// Es lo que necesita el editor desde FE-058: pinta el documento que le presta el core
+    /// y devuelve el desplazamiento por el que lo ha pintado, así que los dos ejes tienen que
+    /// viajar juntos. Si se escribieran por separado, quien pintara podría devolver un eje y
+    /// dejar el otro como estaba, y un documento que baja pero no se desplaza de lado parece
+    /// un editor roto.
+    #[test]
+    fn el_desplazamiento_se_va_y_vuelve_en_los_dos_ejes() {
+        let mut state = UiState::new();
+
+        assert_eq!(state.desplazamiento(), Desplazamiento::default());
+
+        state.set_desplazamiento(Desplazamiento::new(40.0, 12.0));
+
+        assert_eq!(state.desplazamiento_vertical(), 40.0);
+        assert_eq!(state.desplazamiento_horizontal(), 12.0);
+        assert_eq!(
+            state.desplazamiento(),
+            Desplazamiento::new(40.0, 12.0),
+            "los dos ejes se leen y se escriben en la misma operación"
+        );
+    }
+
+    /// El nombre del documento que se está viendo sale de la pestaña activa. FE-068.
+    ///
+    /// Con pestañas: sale de la que está activa y no de la última abierta, porque son cosas
+    /// distintas en cuanto el usuario cambia de documento. Sin pestañas no hay documento, y
+    /// eso es lo que dice la barra de estado.
+    #[test]
+    fn el_nombre_del_documento_que_se_esta_viendo_sale_de_su_pestana() {
+        use crate::frontend::tabs::Pestana;
+
+        let mut state = UiState::new();
+
+        assert_eq!(
+            state.documento_activo(),
+            None,
+            "sin pestañas no hay documento que enseñar"
+        );
+
+        state.abrir_pestana(Pestana::new("src/Form1.cs", false));
+        state.abrir_pestana(Pestana::new("src/Program.cs", true));
+        assert_eq!(
+            state.documento_activo(),
+            Some("Program.cs"),
+            "se ve el nombre del archivo, no su ruta"
+        );
+
+        state.activar_pestana("src/Form1.cs");
+        assert_eq!(
+            state.documento_activo(),
+            Some("Form1.cs"),
+            "al cambiar de pestaña cambia el documento que se ve"
+        );
+
+        state.cerrar_pestana("src/Form1.cs");
+        assert_eq!(
+            state.documento_activo(),
+            Some("Program.cs"),
+            "al cerrar la que se veía pasa a verse la de al lado, que es la misma regla que \
+             sigue el core: la barra no puede mirar un documento que no está"
+        );
+
+        state.cerrar_pestana("src/Program.cs");
+        assert_eq!(
+            state.documento_activo(),
+            None,
+            "y sin pestañas no hay documento"
         );
     }
 

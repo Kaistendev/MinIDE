@@ -1,0 +1,6 @@
+
+        private void buildContent() {
+            setSize(640, 480);
+            setTitle("Ventana principal");
+            getContentPane().setLayout(null);
+        }

@@ -13,11 +13,11 @@
 //! ejecutar pueden estar pasando a la vez, y un solo campo de texto tendría que elegir a
 //! cuál de los dos le está enseñando algo al usuario.
 //!
-//! Los campos del proyecto y del documento son datos del core: el proyecto activo lo sabe
-//! `Workspace` y el documento activo es T-097. La interfaz no tiene todavía forma de
-//! preguntarles, así que esos dos campos dicen que no hay nada, que es verdad: MiniIDE
-//! todavía no abre nada. Cuando la interfaz sepa abrirlos (FE-058, FE-062), se llenan desde
-//! ahí y no desde aquí.
+//! Los campos del proyecto y del documento son datos de lo que hay abierto, y los dice quien
+//! lo tiene: el nombre del proyecto lo sabe el proyecto del core y el del documento la ventana
+//! que lo tiene abierto (FE-068). Cuando no hay ninguno, el campo lo dice —"Sin proyecto",
+//! "Sin documento"— en lugar de callarse, porque un campo que solo aparece cuando hay algo
+//! esconde justo lo que hace falta saber cuando no hay nada.
 
 use eframe::egui;
 
@@ -39,9 +39,18 @@ const SIN_DOCUMENTO: &str = "Sin documento";
 /// de reojo mientras se trabaja y no tiene que competir con el editor. Con el mismo
 /// criterio, el estado va el último: es el campo que más cambia, y al final es donde el
 /// ojo vuelve cuando algo pasa.
-pub fn barra(ui: &mut egui::Ui, estado: &UiState, operaciones: &Operaciones) {
+///
+/// El proyecto y el documento llegan como nombres —o como nada, si no hay— y no como objetos:
+/// la barra solo enseña texto, y de si hay algo responde quien lo sabe, que es la ventana.
+pub fn barra(
+    ui: &mut egui::Ui,
+    estado: &UiState,
+    operaciones: &Operaciones,
+    proyecto: Option<&str>,
+    documento: Option<&str>,
+) {
     ui.horizontal(|ui| {
-        for (nombre, valor) in campos(estado, operaciones) {
+        for (nombre, valor) in campos(estado, operaciones, proyecto, documento) {
             ui.weak(format!("{nombre}: {valor}"));
         }
     });
@@ -51,13 +60,17 @@ pub fn barra(ui: &mut egui::Ui, estado: &UiState, operaciones: &Operaciones) {
 ///
 /// Los de compilación y ejecución son los que se están moviendo, así que van antes del
 /// estado genérico: son los que el usuario mira para saber si puede tocar algo o tiene que
-/// esperar. El del proyecto y el del documento no los puede poner todavía la ventana, así
-/// que dicen que no hay: es mejor eso que un nombre que se calcula aquí, porque un nombre
-/// inventado en la barra hace creer que hay un proyecto abierto.
-fn campos(estado: &UiState, operaciones: &Operaciones) -> [(&'static str, String); 5] {
+/// esperar. El del proyecto y el del documento dicen lo que hay abierto, y si no hay nada lo
+/// dicen con palabras: un campo en blanco parece que la barra se ha quedado a medias.
+fn campos(
+    estado: &UiState,
+    operaciones: &Operaciones,
+    proyecto: Option<&str>,
+    documento: Option<&str>,
+) -> [(&'static str, String); 5] {
     [
-        ("Proyecto", SIN_PROYECTO.to_owned()),
-        ("Documento", SIN_DOCUMENTO.to_owned()),
+        ("Proyecto", proyecto.unwrap_or(SIN_PROYECTO).to_owned()),
+        ("Documento", documento.unwrap_or(SIN_DOCUMENTO).to_owned()),
         (
             "Compilación",
             operaciones.estado_de_build().as_str().to_owned(),
@@ -113,7 +126,7 @@ mod tests {
     /// tendría que elegir a cuál de los dos le enseña algo al usuario.
     #[test]
     fn la_barra_tiene_los_campos_de_rf_13() {
-        let campos = campos(&UiState::new(), &Operaciones::new());
+        let campos = campos(&UiState::new(), &Operaciones::new(), None, None);
         let nombres: Vec<&str> = campos.iter().map(|(nombre, _)| *nombre).collect();
 
         assert_eq!(
@@ -144,7 +157,7 @@ mod tests {
     /// se pone lo que diga el core.
     #[test]
     fn la_barra_no_inventa_un_proyecto_ni_un_documento() {
-        let campos = campos(&UiState::new(), &Operaciones::new());
+        let campos = campos(&UiState::new(), &Operaciones::new(), None, None);
 
         assert_eq!(
             (campos[0].0, campos[0].1.as_str()),
@@ -172,7 +185,7 @@ mod tests {
     fn la_barra_ensena_el_estado_que_tienen_las_operaciones() {
         let operaciones = Operaciones::new();
 
-        let campos = campos(&UiState::new(), &operaciones);
+        let campos = campos(&UiState::new(), &operaciones, None, None);
 
         assert_eq!(
             (campos[2].0, campos[2].1.as_str()),
@@ -199,28 +212,28 @@ mod tests {
         let mut estado = UiState::new();
 
         assert_eq!(
-            campos(&estado, &operaciones)[4],
+            campos(&estado, &operaciones, None, None)[4],
             ("Estado", LISTO.to_owned()),
             "una ventana quieta tiene que decir que está quieta, no nada"
         );
 
         estado.set_status("Compilando...");
         assert_eq!(
-            campos(&estado, &operaciones)[4],
+            campos(&estado, &operaciones, None, None)[4],
             ("Estado", "Compilando...".to_owned()),
             "la barra tiene que decir lo que está pasando"
         );
 
         estado.set_status("1 error");
         assert_eq!(
-            campos(&estado, &operaciones)[4],
+            campos(&estado, &operaciones, None, None)[4],
             ("Estado", "1 error".to_owned()),
             "el estado de la barra cambia con lo que pasa"
         );
 
         estado.clear_status();
         assert_eq!(
-            campos(&estado, &operaciones)[4],
+            campos(&estado, &operaciones, None, None)[4],
             ("Estado", LISTO.to_owned()),
             "sin nada que decir la barra vuelve a decir que está quieta"
         );
@@ -277,9 +290,55 @@ mod tests {
         salida.textures_delta.clear();
 
         assert_eq!(
-            campos(app.state(), app.operaciones())[4],
+            campos(app.state(), app.operaciones(), None, None)[4],
             ("Estado", "Compilando...".to_owned()),
             "la barra de la aplicación tiene que decir lo que dice su estado visual"
+        );
+    }
+
+    /// Los cuatro estados básicos de la ventana se dicen con palabras. FE-068.
+    ///
+    /// Son los estados en los que MiniIDE puede estar esperando sin que nada esté pasando, y
+    /// cada uno tiene que decir qué es lo que pasa: sin nada abierto, con un proyecto, con un
+    /// documento abierto y con la herramienta que hace falta sin estar. Un campo en blanco o un
+    /// texto que no corresponde con la realidad hacen que el usuario dude de si lo que ha
+    /// pulsado ha tenido efecto, que es justo lo que la barra tenía que resolver.
+    #[test]
+    fn cada_estado_basico_de_la_ventana_se_dice_en_la_barra() {
+        let ventana = campos(App::new().state(), App::new().operaciones(), None, None);
+
+        assert_eq!(
+            ventana[0],
+            ("Proyecto", SIN_PROYECTO.to_owned()),
+            "sin nada abierto la barra dice que no hay proyecto: {ventana:?}"
+        );
+        assert_eq!(
+            ventana[1],
+            ("Documento", SIN_DOCUMENTO.to_owned()),
+            "y que no hay documento: {ventana:?}"
+        );
+        assert_eq!(
+            ventana[4],
+            ("Estado", LISTO.to_owned()),
+            "y que está quieta: {ventana:?}"
+        );
+
+        let con_proyecto = campos(
+            App::new().state(),
+            App::new().operaciones(),
+            Some("mi-app"),
+            Some("Form1.cs"),
+        );
+        assert_eq!(con_proyecto[0], ("Proyecto", "mi-app".to_owned()));
+        assert_eq!(con_proyecto[1], ("Documento", "Form1.cs".to_owned()));
+
+        let mut falta = App::new();
+        falta.state_mut().set_status("Falta la herramienta");
+        assert_eq!(
+            campos(falta.state(), falta.operaciones(), Some("mi-app"), None)[4],
+            ("Estado", "Falta la herramienta".to_owned()),
+            "y lo que la ventana ha puesto en el estado es lo que sale, con la herramienta \
+             que falta o con lo que sea (los textos de cada aviso los fija la ventana)"
         );
     }
 

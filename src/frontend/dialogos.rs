@@ -43,7 +43,23 @@ pub enum Dialogo {
 /// no vale, y cancelar es lo que se quiere cuando el clic ha sido un error. Que estén en
 /// una lista y no sueltos es lo que permite que los tests y el dibujo miren lo mismo: si cada
 /// botón estuviera escrito en su sitio habría dos listas que se pueden desincronizar.
-pub const BOTONES_DEL_CIERRE: [&str; 3] = ["Guardar", "Descartar", "Cancelar"];
+///
+/// El de guardar es el mismo nombre que el del menú y el de la barra, y viene de ahí en vez
+/// de escribirse: guardar es guardar en los tres sitios, y si el nombre se escribiera dos
+/// veces el día que uno cambiara el otro el diálogo ofrecería una cosa distinta a la que
+/// ofrece el botón de al lado (FE-076).
+pub const BOTONES_DEL_CIERRE: [&str; 3] = [
+    crate::frontend::acciones::GUARDAR.nombre,
+    "Descartar",
+    "Cancelar",
+];
+
+/// El botón de guardar del diálogo, que es la acción de guardar y no otra cosa.
+///
+/// Va en su propia constante porque un `match` solo puede comparar con constantes y no con
+/// el campo de otra constante, y porque comparar el botón con el nombre de la acción es
+/// justo lo que dice FE-076: si el botón fuera otro, no guardaría.
+const GUARDAR_Y_CERRAR: &str = crate::frontend::acciones::GUARDAR.nombre;
 
 /// Lo que dice el recuadro del diálogo.
 ///
@@ -107,7 +123,7 @@ fn cerrar_documento(ui: &mut egui::Ui, app: &mut App, ruta: &str) {
             }
 
             match nombre {
-                "Guardar" => cerrar(app, ruta, true),
+                GUARDAR_Y_CERRAR => cerrar(app, ruta, true),
                 "Descartar" => cerrar(app, ruta, false),
                 _ => app.state_mut().cerrar_dialogo(),
             }
@@ -481,7 +497,7 @@ mod tests {
     fn la_pregunta_al_cerrar_tiene_las_tres_decisiones() {
         assert_eq!(
             BOTONES_DEL_CIERRE,
-            ["Guardar", "Descartar", "Cancelar"],
+            [GUARDAR_Y_CERRAR, "Descartar", "Cancelar"],
             "cerrar un documento modificado se contesta de tres maneras y si no son tres no \
              hay decisión que tomar"
         );
@@ -491,6 +507,21 @@ mod tests {
                 "un botón sin texto no se ve: {nombre:?}"
             );
         }
+    }
+
+    /// El botón de guardar del diálogo es el mismo que el del menú. FE-076.
+    ///
+    /// Guardar es guardar: si el botón del diálogo se llamara de otra manera, el usuario
+    /// tendría dos nombres para la misma operación y no sabría si el modal guarda lo mismo
+    /// que el botón de arriba.
+    #[test]
+    fn el_boton_de_guardar_del_dialogo_es_la_accion_de_guardar() {
+        assert_eq!(GUARDAR_Y_CERRAR, crate::frontend::acciones::GUARDAR.nombre);
+        assert_eq!(
+            crate::frontend::acciones::GUARDAR.comando,
+            Command::Save,
+            "y lo que hay detrás es el mismo comando que pide el botón de la barra"
+        );
     }
 
     /// El aviso de que falta la herramienta se puede cerrar. FE-056.

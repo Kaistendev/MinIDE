@@ -1397,8 +1397,8 @@ mod tests {
     ///
     /// Solo hay eliminar y no hay duplicar porque `DesignerModel` quita controles y no los
     /// duplica. Un botón de duplicar que se dibujara sería un botón que acepta el clic y no
-    /// hace nada, que es exactamente lo que `acciones::boton` evita cuando una acción no
-    /// tiene comando: aquí no se puede escribir a medias, o hay operación o no hay botón.
+    /// hace nada, y eso es lo que FE-077 quita de la ventana entera: aquí no se puede
+    /// escribir a medias, o hay operación o no hay botón.
     #[test]
     fn el_menu_contextual_del_diseniador_no_ofrece_lo_que_el_core_no_sabe_hacer() {
         let fuente =
@@ -1485,5 +1485,67 @@ mod tests {
             una.shapes.len(),
             otra.shapes.len()
         );
+    }
+
+    /// Un formulario con muchos controles se dibuja sin que el coste se vaya por las ramas.
+    /// FE-078.
+    ///
+    /// El canvas es un lienzo con posiciones absolutas, así que aquí no se puede hacer lo
+    /// que en el editor o en la salida, que es no pintar lo que no se ve: un control fuera
+    /// del formulario está fuera de la ventana y no se pinta, pero uno dentro se pinta. Lo
+    /// que sí tiene que ser cierto es que pintar un control sea barato y no se multiplique
+    /// con el número de ellos, y eso es lo que mide esto.
+    ///
+    /// Se comparan las dos ventanas en vez de poner un límite de segundos porque lo que se
+    /// quiere decir es que el coste no depende del tamaño del formulario, y eso se comprueba
+    /// con una comparación: doscientas cincuenta veces más controles pueden costar algo
+    /// más -aquí cuestan dos o tres-, y si costaran doscientas cincuenta veces más es que se
+    /// está haciendo por control un trabajo que no toca.
+    #[test]
+    fn un_formulario_lleno_no_cuesta_mucho_mas_que_uno_casi_vacio() {
+        // El corto se mide primero para que el de la que se guarda el tiempo no sea el
+        // primero en pagar el arranque de egui.
+        let corto = coste_de_dibujar(4);
+        let lleno = coste_de_dibujar(1000);
+
+        let veces = lleno.as_secs_f64() / corto.as_secs_f64().max(1e-6);
+
+        assert!(
+            veces < 20.0,
+            "pintar mil controles cuesta {veces:.1} veces más que pintar cuatro, y un \
+             formulario lleno es un caso normal, no una calamidad (FE-078)"
+        );
+    }
+
+    /// Cuánto tarda la ventana en dibujarse con un formulario de `cuantos` controles.
+    ///
+    /// Se dibuja tres veces y se mide la última porque las primeras pagan el arranque de
+    /// egui, que no tiene nada que ver con el formulario que se le pasa.
+    fn coste_de_dibujar(cuantos: usize) -> std::time::Duration {
+        let contexto = egui::Context::default();
+        let mut app = app_con_diseniador();
+
+        for indice in 0..cuantos {
+            // En rejilla de veinte columnas para que los controles caigan dentro del
+            // formulario en vez de salirse de él.
+            app.pedir(Comando::Anadir {
+                tipo: "Button".to_owned(),
+                x: 10 + (indice % 20) as i32 * 20,
+                y: 10 + (indice / 20) as i32 * 12,
+                ancho: 18,
+                alto: 10,
+            });
+        }
+
+        for _ in 0..2 {
+            let mut pintado = ventana(&contexto, &mut app);
+            pintado.textures_delta.clear();
+        }
+
+        let inicio = std::time::Instant::now();
+        let mut pintado = ventana(&contexto, &mut app);
+        pintado.textures_delta.clear();
+
+        inicio.elapsed()
     }
 }

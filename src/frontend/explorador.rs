@@ -13,6 +13,8 @@
 //! un explorador que flota tapa el editor y hay que moverlo de sitio cada vez que se quiere
 //! ver una cosa.
 
+use std::path::Path;
+
 use crate::commands::Command;
 use crate::project::{ProjectFile, ProjectFileKind};
 use eframe::egui;
@@ -179,15 +181,21 @@ fn texto(archivo: &ProjectFile, estado: &UiState) -> egui::RichText {
 
 /// La clave de una fila: su ruta relativa, con la misma forma en todos los sistemas.
 ///
-/// Es la clave con la que el estado visual recuerda qué carpetas están abiertas, y por eso
-/// se rehace siempre igual en vez de dejar la ruta como venga: si dependiera de cómo se
-/// escribieron las rutas, la misma carpeta sería dos claves distintas en dos equipos, y una
-/// se quedaría abierta y la otra no.
+/// Es la clave con la que el estado visual recuerda qué carpetas están abiertas y cuál está
+/// seleccionada, y por eso se rehace siempre igual en vez de dejar la ruta como venga: si
+/// dependiera de cómo se escribieron las rutas, la misma carpeta sería dos claves distintas
+/// en dos equipos, y una se quedaría abierta y la otra no.
 fn clave_de(archivo: &ProjectFile) -> String {
-    archivo
-        .path()
-        .as_path()
-        .components()
+    clave(archivo.path().as_path())
+}
+
+/// La clave de una ruta, que es su forma con barras en todos los sistemas.
+///
+/// Es pública dentro del crate porque no solo la usan las filas: la lista de diagnósticos
+/// señala el archivo donde está un error y necesita nombrarlo igual que el explorador, y si
+/// cada uno rehiziera la clave a su manera uno marcaría una fila que el otro no reconoce.
+pub(crate) fn clave(ruta: &Path) -> String {
+    ruta.components()
         .map(|parte| parte.as_os_str().to_string_lossy().into_owned())
         .collect::<Vec<_>>()
         .join("/")
@@ -446,6 +454,28 @@ mod tests {
         }
 
         filas_de(context, proyecto, app)
+    }
+
+    /// La clave de una fila y la de su ruta son la misma, y con barras.
+    ///
+    /// Lo segundo es lo que hace que el mismo archivo tenga la misma clave en todos los
+    /// equipos: en Windows la ruta se escribe con barras invertidas y en Linux con
+    /// normales, y si la clave dependiera de eso la misma carpeta sería dos en el mismo
+    /// proyecto. Lo primero es lo que permite que el explorador y la lista de diagnósticos
+    /// nombren un archivo igual: si cada uno rehiziera la clave a su manera, el diagnóstico
+    /// señalaría un archivo que el explorador no reconocería como seleccionado.
+    #[test]
+    fn la_clave_de_una_fila_es_la_de_su_ruta() {
+        let ruta = crate::project::ProjectRelativePath::new("src/vistas/Vista.cs")
+            .expect("ruta de prueba valida");
+        let archivo = ProjectFile::new(ruta.clone(), ProjectFileKind::File);
+
+        assert_eq!(super::clave(ruta.as_path()), "src/vistas/Vista.cs");
+        assert_eq!(
+            super::clave_de(&archivo),
+            super::clave(ruta.as_path()),
+            "una fila y su ruta se nombran igual"
+        );
     }
 
     /// El explorador es un panel pegado a la izquierda, de alto y con ancho.
@@ -900,7 +930,7 @@ mod tests {
     /// "Renombrar", este test es el que se entera.
     ///
     /// Las dos acciones se miran con su comando porque lo que RF-06 prepara son los
-    /// comandos: un elemento que no pide nada no es una acción, es un rótulo.
+    /// comandos: un elemento que no pide nada no es una acción, es un rótulo (FE-077).
     #[test]
     fn el_menu_contextual_ofrece_las_dos_acciones_de_rf_06() {
         let menu: Vec<_> = super::ACCIONES_DEL_CONTEXTO
@@ -911,8 +941,8 @@ mod tests {
         assert_eq!(
             menu,
             vec![
-                ("Nuevo archivo", Some(Command::NewFile)),
-                ("Nuevo directorio", Some(Command::NewDirectory)),
+                ("Nuevo archivo", Command::NewFile),
+                ("Nuevo directorio", Command::NewDirectory),
             ],
             "el menú contextual de la fila ofrece el archivo y el directorio, y cada uno pide su comando"
         );

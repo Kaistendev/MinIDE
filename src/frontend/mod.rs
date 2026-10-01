@@ -32,6 +32,7 @@
 //! * Compilar, ejecutar y parar, con sus estados y su trabajo en segundo plano: FE-038 a
 //!   FE-043.
 //! * El diseñador visual y su panel de propiedades: FE-044 a FE-052.
+//! * Las vistas que habilita el proyecto abierto y su diseñador: FE-057 a FE-060.
 
 //!
 //! Nada de esto se implementa antes de tiempo. Un widget que se añade sin su tarea se
@@ -57,12 +58,14 @@ mod status;
 mod tabs;
 mod toolbar;
 mod ui_state;
+mod vistas;
 
 pub use app::{opciones, run, titulo, ventana, App};
 pub use diseniador::Comando as GestoDelDiseniador;
 pub use diseniador::Diseniador;
 pub use icon::{icono, LADO, LOGO};
 pub use ui_state::UiState;
+pub use vistas::Vistas;
 
 #[cfg(test)]
 mod tests {

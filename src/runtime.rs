@@ -1,5 +1,8 @@
 use std::fmt;
+use std::io::{BufRead, BufReader, Read};
 use std::process::{Command, Stdio};
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::thread::JoinHandle;
 
 use crate::core::{CoreError, CoreResult};
 use crate::toolchain::Invocation;
@@ -10,7 +13,7 @@ use crate::toolchain::Invocation;
 /// compilacion la entregan tal cual, sin copiarse sus tres datos. Quien necesite
 /// el codigo de salida o el texto lee de aqui, y anadir algo nuevo a la salida de
 /// un proceso es cosa de este sitio y no de cada resultado que la muestra.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ProcessOutput {
     exit_code: Option<i32>,
     standard_output: String,
@@ -50,13 +53,83 @@ impl ProcessOutput {
     pub fn standard_error(&self) -> &str {
         &self.standard_error
     }
+
+    /// Anade una linea al flujo del que salio.
+    ///
+    /// Es como crece la salida mientras el proceso corre: cada linea que se lee se
+    /// guarda en el flujo que le toca, y el resultado final es la misma estructura
+    /// que la de un proceso que ya termino. Guarda el texto y el salto de linea,
+    /// porque un flujo es una sucesion de lineas y no una sola tirada.
+    pub fn push_line(&mut self, line: &OutputLine) {
+        let flow = match line.stream() {
+            OutputStream::StandardOutput => &mut self.standard_output,
+            OutputStream::StandardError => &mut self.standard_error,
+        };
+
+        flow.push_str(line.text());
+        flow.push('\n');
+    }
+}
+
+/// De que salida de un proceso salio una linea.
+///
+/// Un proceso habla por dos sitios —lo que dice y lo que le va mal— y el panel de
+/// abajo los pinta distinto, asi que la linea tiene que viajar sabiendo de donde
+/// viene.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum OutputStream {
+    StandardOutput,
+    StandardError,
+}
+
+impl OutputStream {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            OutputStream::StandardOutput => "stdout",
+            OutputStream::StandardError => "stderr",
+        }
+    }
+}
+
+impl fmt::Display for OutputStream {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Una linea que un proceso dijo mientras corria, con la salida de la que salio.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutputLine {
+    stream: OutputStream,
+    text: String,
+}
+
+impl OutputLine {
+    pub fn new(stream: OutputStream, text: impl Into<String>) -> Self {
+        Self {
+            stream,
+            text: text.into(),
+        }
+    }
+
+    pub fn stream(&self) -> OutputStream {
+        self.stream
+    }
+
+    /// El texto de la linea, sin el salto de linea que la separa de la siguiente.
+    pub fn text(&self) -> &str {
+        &self.text
+    }
 }
 
 /// Ejecuta `invocation` y espera a que termine, capturando stdout y stderr.
 ///
-/// Es sincrono y por tanto bloquea mientras el proceso corre. La ejecucion sin
-/// bloqueo es la tarea de procesos sin bloquear; mientras tanto, quien llame
-/// tiene que hacerlo fuera del hilo de la interfaz.
+/// Es sincrono y por tanto bloquea mientras el proceso corre, que es lo que
+/// necesita una compilacion: de ella solo importa el resultado, no lo que va
+/// contando por el camino. Para lanzar algo que corre mientras se mira —una
+/// aplicacion, un servidor— esta `ProcessRegistry::spawn`, que no bloquea y deja
+/// leer la salida en caliente. Quien llame a `run` tiene que hacerlo fuera del
+/// hilo de la interfaz.
 ///
 /// Si el proceso no se puede lanzar, el error dice que programa era.
 pub fn run(invocation: &Invocation) -> CoreResult<ProcessOutput> {
@@ -162,14 +235,28 @@ pub struct RunningProcess {
     id: ProcessId,
     child: std::process::Child,
     stopped: bool,
+    /// Por donde llegan las lineas que el proceso va diciendo.
+    lines: Receiver<OutputLine>,
+    /// Los hilos que leen las dos salidas, para poder esperarlos al final.
+    readers: Vec<JoinHandle<()>>,
+    /// Lo que el proceso ha dicho hasta ahora, ya guardado por flujo.
+    output: ProcessOutput,
 }
 
 impl RunningProcess {
-    fn new(id: ProcessId, child: std::process::Child) -> Self {
+    fn new(
+        id: ProcessId,
+        child: std::process::Child,
+        lines: Receiver<OutputLine>,
+        readers: Vec<JoinHandle<()>>,
+    ) -> Self {
         Self {
             id,
             child,
             stopped: false,
+            lines,
+            readers,
+            output: ProcessOutput::empty(),
         }
     }
 
@@ -198,18 +285,75 @@ impl RunningProcess {
         state_from(self.stopped, waited)
     }
 
+    /// Lo que el proceso ha dicho desde la ultima vez que se pregunto, sin bloquear.
+    ///
+    /// Recoge lo que ya ha llegado y vuelve en el acto: lo que el proceso todavia no
+    /// ha escrito no se espera, que es lo que permite dibujar la ventana mientras
+    /// algo corre. Cada linea se guarda en la salida acumulada, de modo que el
+    /// resultado final no pierde nada de lo que se fue leyendo.
+    pub fn read_output(&mut self) -> Vec<OutputLine> {
+        let mut lines = Vec::new();
+
+        loop {
+            match self.lines.try_recv() {
+                Ok(line) => {
+                    self.output.push_line(&line);
+                    lines.push(line);
+                }
+                Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
+            }
+        }
+
+        lines
+    }
+
+    /// Lo que el proceso ha dicho desde que se lanzo, hasta lo ultimo ya leido.
+    ///
+    /// Es lo que se puede pintar en el panel de salida en cualquier momento: crece
+    /// mientras el proceso corre y queda entero cuando termina.
+    pub fn output(&self) -> &ProcessOutput {
+        &self.output
+    }
+
     /// Lo que se sabe del proceso ahora mismo.
     ///
-    /// La salida se recoge cuando el proceso termina, no mientras corre: leerla
-    /// en caliente exige hilo, y es la tarea de procesos sin bloquear.
+    /// La salida viaja con el estado: lo que el proceso dijo mientras corria ya esta
+    /// recogido —lo recoge `read_output`— y al terminar se espera a los lectores para
+    /// que no falte la ultima linea. El codigo de salida se consulta al sistema solo
+    /// cuando ya ha terminado.
     pub fn result(&mut self) -> RunResult {
         let state = self.state();
+
+        if state == ProcessState::Running {
+            self.read_output();
+        } else {
+            // Cuando el proceso cierra sus salidas los lectores terminan solos; esperarlos
+            // asegura que las ultimas lineas esten recogidas antes de dar la salida.
+            self.wait_for_readers();
+            self.read_output();
+        }
+
         let exit_code = match self.child.try_wait() {
             Ok(Some(status)) => status.code(),
             _ => None,
         };
 
-        RunResult::new(state, ProcessOutput::new(exit_code, "", ""), None)
+        let output = ProcessOutput::new(
+            exit_code,
+            self.output.standard_output(),
+            self.output.standard_error(),
+        );
+
+        RunResult::new(state, output, None)
+    }
+
+    /// Espera a los hilos que leen las salidas, que terminan cuando el proceso cierra
+    /// las suyas. Sin esto se podria dar por terminado un proceso con la ultima linea
+    /// todavia en camino.
+    fn wait_for_readers(&mut self) {
+        for reader in self.readers.drain(..) {
+            let _ = reader.join();
+        }
     }
 
     /// Para el proceso y todo lo que tenga debajo, y lo marca como parado.
@@ -315,6 +459,26 @@ fn state_from(stopped: bool, waited: Waited) -> ProcessState {
     }
 }
 
+/// Lee `reader` linea a linea y las manda por `sender`, en su propio hilo.
+///
+/// El hilo termina cuando el flujo se cierra, que es cuando el proceso cierra esa
+/// salida o muere. Si nadie recoge las lineas —porque el proceso se olvido— el
+/// envio falla y el hilo tambien termina, para no quedarse leyendo para nadie.
+fn read_output<R>(reader: R, stream: OutputStream, sender: Sender<OutputLine>) -> JoinHandle<()>
+where
+    R: Read + Send + 'static,
+{
+    std::thread::spawn(move || {
+        for line in BufReader::new(reader).lines() {
+            let Ok(text) = line else { break };
+
+            if sender.send(OutputLine::new(stream, text)).is_err() {
+                break;
+            }
+        }
+    })
+}
+
 /// Los procesos que MiniIDE ha lanzado y sigue teniendo localizados.
 ///
 /// Existe para que un proceso se pueda volver a encontrar: sin el, un proceso
@@ -332,19 +496,35 @@ impl ProcessRegistry {
 
     /// Lanza `invocation` sin esperar a que termine y registra el proceso.
     ///
-    /// No bloquea: devuelve en cuanto el proceso esta en marcha. Si no se puede
-    /// lanzar, no se registra nada.
+    /// No bloquea: devuelve en cuanto el proceso esta en marcha. Lo que el proceso
+    /// escriba no se espera aqui, sino que se lee en hilos aparte y se puede ir
+    /// recogiendo con `RunningProcess::read_output` mientras corre.
+    ///
+    /// Si no se puede lanzar, no se registra nada.
     pub fn spawn(&mut self, invocation: &Invocation) -> CoreResult<ProcessId> {
-        let child = Command::new(invocation.program())
+        let mut child = Command::new(invocation.program())
             .args(invocation.arguments())
             .current_dir(invocation.working_directory())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()
             .map_err(|error| CoreError::from_io(invocation.program().as_ref(), &error))?;
 
         self.next_id += 1;
         let id = ProcessId::new(self.next_id);
 
-        self.processes.push(RunningProcess::new(id, child));
+        let (sender, lines) = mpsc::channel();
+        let mut readers = Vec::new();
+
+        if let Some(stdout) = child.stdout.take() {
+            readers.push(read_output(stdout, OutputStream::StandardOutput, sender.clone()));
+        }
+
+        if let Some(stderr) = child.stderr.take() {
+            readers.push(read_output(stderr, OutputStream::StandardError, sender));
+        }
+
+        self.processes.push(RunningProcess::new(id, child, lines, readers));
 
         Ok(id)
     }
@@ -984,5 +1164,168 @@ mod tests {
         assert_eq!(ProcessState::Stopped.as_str(), "stopped");
         assert_eq!(ProcessState::Failed.as_str(), "failed");
         assert_eq!(ProcessState::Stopped.to_string(), "stopped");
+    }
+
+    /// Una llamada que habla por las dos salidas y sigue viva un rato, para poder
+    /// leerla en caliente en vez de solo al final.
+    ///
+    /// Los `&` van pegados a lo que separan porque `echo` copia el espacio de antes:
+    /// con `echo hola &` la linea saldria con un espacio de mas.
+    fn talking_invocation() -> Invocation {
+        invocation(
+            "cmd",
+            &["/C", "echo hola&echo mal 1>&2&ping -n 4 127.0.0.1 >NUL"],
+        )
+    }
+
+    #[test]
+    fn an_output_line_keeps_its_flow_and_its_text() {
+        let normal = OutputLine::new(OutputStream::StandardOutput, "hola");
+        let error = OutputLine::new(OutputStream::StandardError, "mal");
+
+        assert_eq!(normal.stream(), OutputStream::StandardOutput);
+        assert_eq!(normal.text(), "hola");
+        assert_eq!(error.stream(), OutputStream::StandardError);
+        assert_eq!(error.text(), "mal");
+    }
+
+    #[test]
+    fn the_output_grows_line_by_line_in_its_flow() {
+        let mut output = ProcessOutput::empty();
+
+        output.push_line(&OutputLine::new(OutputStream::StandardOutput, "primera"));
+        output.push_line(&OutputLine::new(OutputStream::StandardError, "aviso"));
+        output.push_line(&OutputLine::new(OutputStream::StandardOutput, "segunda"));
+
+        assert_eq!(output.standard_output(), "primera\nsegunda\n");
+        assert_eq!(output.standard_error(), "aviso\n");
+    }
+
+    #[test]
+    fn the_two_outputs_are_named() {
+        assert_eq!(OutputStream::StandardOutput.as_str(), "stdout");
+        assert_eq!(OutputStream::StandardError.as_str(), "stderr");
+        assert_eq!(OutputStream::StandardError.to_string(), "stderr");
+    }
+
+    /// Lo que el proceso dice mientras corre se puede leer sin esperar a que termine:
+    /// es lo que permite enseñarlo en la ventana en el momento en que se escribe.
+    #[test]
+    #[ignore = "launches cmd.exe"]
+    fn a_running_process_lets_its_output_be_read_before_it_ends() {
+        let mut registry = ProcessRegistry::new();
+        let id = registry.spawn(&talking_invocation()).unwrap();
+
+        let process = registry.get_mut(id).unwrap();
+        let mut leido = String::new();
+
+        for _ in 0..100 {
+            for line in process.read_output() {
+                if line.stream() == OutputStream::StandardOutput {
+                    leido.push_str(line.text());
+                }
+            }
+
+            if leido.contains("hola") {
+                break;
+            }
+
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+
+        assert!(leido.contains("hola"), "se leyo antes de terminar: {leido:?}");
+        assert_eq!(
+            process.state(),
+            ProcessState::Running,
+            "el proceso sigue vivo mientras se lee"
+        );
+
+        registry.stop(id).unwrap();
+    }
+
+    /// Cada linea viaja sabiendo de que salida salio: el panel de abajo pinta distinto
+    /// lo que el proceso dice y lo que le va mal.
+    #[test]
+    #[ignore = "launches cmd.exe"]
+    fn the_two_outputs_of_a_running_process_are_told_apart() {
+        let mut registry = ProcessRegistry::new();
+        let id = registry.spawn(&talking_invocation()).unwrap();
+
+        let process = registry.get_mut(id).unwrap();
+        let mut lineas = Vec::new();
+
+        for _ in 0..100 {
+            lineas.extend(process.read_output());
+
+            let hay_normal = lineas
+                .iter()
+                .any(|line| line.stream() == OutputStream::StandardOutput);
+            let hay_error = lineas
+                .iter()
+                .any(|line| line.stream() == OutputStream::StandardError);
+
+            if hay_normal && hay_error {
+                break;
+            }
+
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+
+        assert!(
+            lineas
+                .iter()
+                .any(|line| line.text().trim_end() == "hola"
+                    && line.stream() == OutputStream::StandardOutput),
+            "{lineas:?}"
+        );
+        assert!(
+            lineas
+                .iter()
+                .any(|line| line.text().trim_end() == "mal"
+                    && line.stream() == OutputStream::StandardError),
+            "{lineas:?}"
+        );
+
+        registry.stop(id).unwrap();
+    }
+
+    /// Al terminar, la salida es la misma que si se hubiera recogido de golpe: lo que
+    /// se leyo mientras corria sigue ahi y no se pierde la ultima linea.
+    #[test]
+    #[ignore = "launches cmd.exe"]
+    fn what_was_read_while_running_is_still_there_at_the_end() {
+        let mut registry = ProcessRegistry::new();
+        let id = registry.spawn(&talking_invocation()).unwrap();
+
+        registry.get_mut(id).unwrap().read_output();
+        wait_for_exit(&mut registry, id);
+
+        let output = registry.get_mut(id).unwrap().result().output().clone();
+
+        assert!(
+            output.standard_output().contains("hola"),
+            "lo leido antes no se pierde: {output:?}"
+        );
+        assert!(
+            output.standard_error().contains("mal"),
+            "y la salida de error tambien esta: {output:?}"
+        );
+    }
+
+    #[test]
+    #[ignore = "launches cmd.exe"]
+    fn the_output_of_a_finished_process_is_captured_whole() {
+        let mut registry = ProcessRegistry::new();
+        let id = registry
+            .spawn(&invocation("cmd", &["/C", "echo salida & echo error 1>&2"]))
+            .unwrap();
+
+        wait_for_exit(&mut registry, id);
+
+        let output = registry.get_mut(id).unwrap().result().output().clone();
+
+        assert_eq!(output.exit_code(), Some(0));
+        assert!(output.standard_output().contains("salida"), "{output:?}");
+        assert!(output.standard_error().contains("error"), "{output:?}");
     }
 }

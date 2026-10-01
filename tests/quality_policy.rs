@@ -157,3 +157,139 @@ fn the_agent_guide_declares_the_frontend_stack() {
         "AGENTS.md must declare egui/eframe as the frontend stack, so the decision is not reopened in a task"
     );
 }
+
+/// El nombre y la razon escrita de cada dependencia declarada.
+///
+/// La razon son las lineas de comentario que hay justo encima de la dependencia, que
+/// es donde se explica para que esta.
+fn declared_dependencies(manifest: &str) -> Vec<(String, String)> {
+    let mut declaradas = Vec::new();
+    let mut seccion = String::new();
+    let mut comentario: Vec<String> = Vec::new();
+
+    for line in manifest.lines() {
+        let linea = line.trim();
+
+        if linea.starts_with('[') {
+            seccion = linea.to_string();
+            comentario.clear();
+            continue;
+        }
+
+        if linea.starts_with('#') {
+            comentario.push(linea.to_string());
+            continue;
+        }
+
+        if linea.is_empty() {
+            continue;
+        }
+
+        if seccion.contains("dependencies") {
+            if let Some((clave, _)) = linea.split_once('=') {
+                declaradas.push((clave.trim().to_string(), comentario.join(" ")));
+            }
+        }
+
+        comentario.clear();
+    }
+
+    declaradas
+}
+
+/// T-091: cada dependencia declarada se usa en el crate y lleva su razon escrita.
+///
+/// Una dependencia que nadie usa es peso muerto que se compila en cada build; y una
+/// dependencia sin la razon escrita al lado es la que acaba creciendo sin que nadie
+/// sepa para que estaba.
+#[test]
+fn every_dependency_is_used_and_explained() {
+    let manifest = read_repo_file("Cargo.toml");
+    let fuentes = crate_sources();
+
+    for (nombre, razon) in declared_dependencies(&manifest) {
+        assert!(
+            !razon.is_empty(),
+            "`{nombre}` no lleva la razon escrita encima en Cargo.toml"
+        );
+        assert!(
+            razon.contains(&nombre),
+            "la razon de `{nombre}` no lo nombra, asi que no se sabe a cual se refiere: {razon:?}"
+        );
+        assert!(
+            contains_identifier(&fuentes, &nombre),
+            "`{nombre}` esta declarada en Cargo.toml y no se usa en el crate"
+        );
+    }
+}
+
+/// El guard tiene que reconocer una dependencia de verdad y no confundir los
+/// comentarios con declaraciones.
+#[test]
+fn the_dependency_guard_reads_the_manifest() {
+    let manifest = "\
+[dependencies]
+# Para la ventana.
+eframe = { version = \"0.36\" }
+image = \"0.25\"
+
+[dev-dependencies]
+# Para las pruebas.
+serde = \"1\"
+";
+
+    let declaradas = declared_dependencies(manifest);
+
+    assert_eq!(
+        declaradas,
+        vec![
+            ("eframe".to_string(), "# Para la ventana.".to_string()),
+            ("image".to_string(), String::new()),
+            ("serde".to_string(), "# Para las pruebas.".to_string()),
+        ]
+    );
+}
+
+/// Todos los `.rs` del crate: `src/`, `tests/` y el `build.rs`.
+fn crate_sources() -> String {
+    let raiz = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut todo = String::new();
+
+    for carpeta in ["src", "tests"] {
+        collect_rs(&raiz.join(carpeta), &mut todo);
+    }
+
+    if let Ok(build) = fs::read_to_string(raiz.join("build.rs")) {
+        todo.push_str(&build);
+    }
+
+    todo
+}
+
+/// Anade a `todo` el texto de cada `.rs` que haya bajo `dir`, recursivamente.
+fn collect_rs(dir: &std::path::Path, todo: &mut String) {
+    let Ok(entradas) = fs::read_dir(dir) else {
+        return;
+    };
+
+    for entrada in entradas.flatten() {
+        let ruta = entrada.path();
+
+        if ruta.is_dir() {
+            collect_rs(&ruta, todo);
+        } else if ruta.extension().is_some_and(|extension| extension == "rs") {
+            if let Ok(contenido) = fs::read_to_string(&ruta) {
+                todo.push_str(&contenido);
+            }
+        }
+    }
+}
+
+/// Si `name` aparece como un identificador suelto en `text`.
+///
+/// Partir por lo que no es un identificador evita que `image` cuente por aparecer
+/// dentro de `imagebar` o de una palabra cualquiera.
+fn contains_identifier(text: &str, name: &str) -> bool {
+    text.split(|caracter: char| !caracter.is_alphanumeric() && caracter != '_')
+        .any(|token| token == name)
+}

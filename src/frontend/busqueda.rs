@@ -55,7 +55,7 @@ fn consulta(ui: &mut egui::Ui, app: &mut App) {
             .expect("la busqueda se comprueba antes de dibujar sus campos");
 
         egui::TextEdit::singleline(busqueda.consulta_mut())
-            .hint_text("Buscar")
+            .hint_text(super::acciones::BUSCAR.nombre)
             .desired_width(ANCHO_DE_UN_CAMPO)
             .show(ui)
     };

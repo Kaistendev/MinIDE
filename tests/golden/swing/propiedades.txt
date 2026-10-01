@@ -1,0 +1,19 @@
+        private JLabel final_;
+        private JTextField details;
+
+        private void buildContent() {
+            setSize(640, 480);
+            setTitle("Ventana principal");
+            getContentPane().setLayout(null);
+
+            final_ = new JLabel();
+            final_.setBounds(0, 0, 100, 20);
+            final_.setVisible(false);
+            getContentPane().add(final_);
+
+            details = new JTextField();
+            details.setBounds(0, 24, 100, 20);
+            details.setText("Diga \"algo\"");
+            details.setEnabled(false);
+            getContentPane().add(details);
+        }

@@ -1,0 +1,24 @@
+        private System.Windows.Forms.Label @class;
+
+        private System.Windows.Forms.TextBox details;
+
+        private void InitializeComponent()
+        {
+            this.SuspendLayout();
+            this.ClientSize = new System.Drawing.Size(640, 480);
+            this.Text = "Formulario principal";
+            this.@class = new System.Windows.Forms.Label();
+            this.@class.Location = new System.Drawing.Point(0, 0);
+            this.@class.Name = "class";
+            this.@class.Size = new System.Drawing.Size(100, 20);
+            this.@class.Visible = false;
+            this.Controls.Add(this.@class);
+            this.details = new System.Windows.Forms.TextBox();
+            this.details.Location = new System.Drawing.Point(0, 24);
+            this.details.Name = "details";
+            this.details.Size = new System.Drawing.Size(100, 20);
+            this.details.Text = "Diga \"algo\"";
+            this.details.Enabled = false;
+            this.Controls.Add(this.details);
+            this.ResumeLayout(false);
+        }

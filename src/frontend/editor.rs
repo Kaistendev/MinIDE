@@ -15,9 +15,10 @@ use crate::document::{TextPosition, TextRange};
 use crate::editor::Document;
 use crate::language::LanguageProvider;
 
-use super::acciones::{self, Accion, BUSCAR, COPIAR, CORTAR, DESHACER, PEGAR, REEMPLAZAR, REHACER};
+use super::acciones::{self, Accion, BUSCAR, DESHACER, REEMPLAZAR, REHACER};
 use super::app::App;
 use super::layout::Zona;
+use super::ui_state::Desplazamiento;
 use eframe::egui;
 
 /// La fuente con la que se ve el código.
@@ -87,22 +88,42 @@ impl<'a> PestanaVisual<'a> {
 /// hay nada que mirar. Con documento lo pinta entero, y lo que se ve de él es lo que hay
 /// en él: el texto, el cursor donde el core lo tiene, la selección donde el core la tiene
 /// y los números de línea a la izquierda.
-pub fn panel(ui: &mut egui::Ui, vista: PestanaVisual<'_>, app: &mut App) {
+///
+/// El desplazamiento entra y sale y no vive dentro de la ventana porque es de ella, no
+/// del documento: se recibe por donde se quedó y se devuelve escrito al final, después de
+/// pintar. Va así y no preguntando a la aplicación porque el documento y el estado visual
+/// no se pueden prestar a la vez —el primero es del core y el segundo es de la ventana— y
+/// el editor los necesita los dos en el mismo frame (FE-058).
+pub fn panel(ui: &mut egui::Ui, vista: PestanaVisual<'_>, desplazamiento: &mut Desplazamiento) {
     let Some(documento) = vista.documento else {
         return;
     };
 
     ui.set_min_size(ui.available_size());
 
-    // El editor escribe solo cuando es lo que tiene el foco, y lo tiene cuando el ratón
-    // está dentro: si escribiera con cualquier tecla, el usuario escribiría en el
-    // documento mientras está escribiendo en otro sitio, que es un diálogo o una
-    // búsqueda.
-    // El editor toma su id de la zona en la que vive y no de donde esté dibujado, que es
-    // lo que hacen los paneles del layout: si el id dependiera del sitio, al abrirse una
-    // pestaña el editor bajaría y perdería el foco sin que el usuario hubiera hecho nada.
+    // El editor escribe solo cuando es lo que tiene el foco. El foco se pide con un clic
+    // dentro del editor y no solo con pasar el ratón por encima: si lo pidiera al pasar por
+    // encima, cualquier clic en un botón —en la barra, en el menú, en una fila del árbol— se
+    // perdería en cuanto el puntero volviera al editor, y con él la tecla que el usuario iba a
+    // pulsar para activar ese botón. Un editor que roba el foco solo con que el ratón esté
+    // encima es un editor que escribe donde no toca.
     let id = Zona::Central.id().with("editor");
-    if ui.rect_contains_pointer(ui.max_rect()) {
+
+    // Antes de pedir el foco, el editor se registra como un widget que puede tenerlo. egui
+    // suelta el foco de todo widget que no se ha dibujado en el frame —es su forma de no
+    // dejar el foco en algo que ya no está en pantalla—, así que con el `request_focus` a
+    // secas el foco se perdía en el frame siguiente y se recuperaba en el siguiente: la
+    // mitad de las pulsaciones de teclado se perdían y el editor parecía ir a trompicones.
+    //
+    // Se registra sin clic ni arrastre porque el clic del editor no lo usa para nada: el
+    // clic que sí importa —el del menú contextual— lo pide el layout con su propio id, y
+    // dos widgets que se comen el clic en el mismo hueco se lo quitarían el uno al otro.
+    ui.interact(ui.max_rect(), id, egui::Sense::focusable_noninteractive());
+
+    let pulsado =
+        ui.input(|entrada| entrada.pointer.any_pressed() || entrada.pointer.any_released());
+
+    if pulsado && ui.rect_contains_pointer(ui.max_rect()) {
         ui.memory_mut(|memoria| memoria.request_focus(id));
     }
 
@@ -129,67 +150,90 @@ pub fn panel(ui: &mut egui::Ui, vista: PestanaVisual<'_>, app: &mut App) {
     // y no en el documento: es dónde se está mirando, no qué se está mirando.
     let pedido = rueda(ui);
     let vertical = desplazamiento_calculado(
-        app.state().desplazamiento_vertical(),
+        desplazamiento.vertical(),
         pedido.y,
         alto,
         MARGEN * 2.0 + medidas.linea * lineas.len() as f32,
     );
     let horizontal = desplazamiento_calculado(
-        app.state().desplazamiento_horizontal(),
+        desplazamiento.horizontal(),
         pedido.x,
         ancho,
         ANCHO_DE_LOS_NUMEROS + MARGEN * 2.0 + ancho_del_texto,
     );
-    app.state_mut().set_desplazamiento_vertical(vertical);
-    app.state_mut().set_desplazamiento_horizontal(horizontal);
 
     // El desplazamiento no se aplica a las medidas sino a lo que se pinta: las medidas son
     // las del texto y el texto no se mueve, lo que se mueve es por dónde se enseña.
-    let desplazamiento = -egui::vec2(horizontal, vertical);
+    let desplazamiento_texto = -egui::vec2(horizontal, vertical);
+
+    // De dónde sale lo que se pinta y hasta dónde. `ui.painter()` pinta en coordenadas de la
+    // ventana y no en las del hueco donde está el editor, así que todo lo que se calcula con
+    // [`Medidas::punto`] —que cuenta desde la esquina del editor— se suma esta esquina. Sin
+    // esto el texto se dibujaría en la esquina de arriba de la ventana, encima del menú, en
+    // cualquier sitio donde el editor no estuviera pegado a ese rincón (FE-058).
+    //
+    // Y se pinta recortado a ese hueco porque una línea más ancha que la zona no puede
+    // invadir lo que hay al lado: el desplazamiento la mueve, pero mientras no se mueve se
+    // saldría encima de la columna de propiedades (FE-066).
+    let origen = ui.max_rect().min;
+    let pintor = ui.painter().with_clip_rect(ui.max_rect());
+    let fuente = ESTILO.resolve(ui.style());
+
+    // Cuánto se aparta lo pintado de la esquina del editor: el desplazamiento por el que se
+    // está mirando y la esquina donde está el editor.
+    let correr = desplazamiento_texto + origen.to_vec2();
 
     if let Some(mancha) = rectangulo_de_seleccion(seleccion, ancho - MARGEN, &medidas) {
-        ui.painter().rect_filled(
-            mancha.translate(desplazamiento),
-            0.0,
-            color_de_la_seleccion(),
-        );
+        pintor.rect_filled(mancha.translate(correr), 0.0, color_de_la_seleccion());
     }
 
     for numero in lineas_visibles(vertical, alto, &medidas, lineas.len()) {
         pintar_linea(
-            ui,
+            &pintor,
+            &fuente,
             numero,
             lineas[numero],
             vista.lenguaje,
             &medidas,
-            desplazamiento,
+            correr,
         );
     }
 
-    let cursor = rectangulo_del_cursor(cursor, &medidas).translate(desplazamiento);
-    ui.painter().rect_filled(cursor, 0.0, COLOR_DEL_CURSOR);
+    let cursor = rectangulo_del_cursor(cursor, &medidas).translate(correr);
+    pintor.rect_filled(cursor, 0.0, COLOR_DEL_CURSOR);
+
+    // El desplazamiento se devuelve al final, con el documento ya pintado: escribirlo antes
+    // dejaría el estado de la ventana prestado mientras se pinta, y el editor necesita el
+    // documento justo para eso.
+    *desplazamiento = Desplazamiento::new(vertical, horizontal);
 }
 
 /// Pinta una línea: su número a la izquierda y su texto con su color.
 ///
-/// La línea se pinta desplazada, y su número con ella: un número que se quedara quieto
-/// mientras el texto baja sería el número de otra línea, y un gutter que no cuadra con el
-/// texto no sirve para señalar una línea.
+/// La línea se pinta corrida y su número con ella: un número que se quedara quieto mientras el
+/// texto baja sería el número de otra línea, y un gutter que no cuadra con el texto no sirve
+/// para señalar una línea.
+///
+/// `correr` es cuánto se aparta lo pintado de la esquina del editor: el desplazamiento por el
+/// que se está mirando más la esquina donde está el editor, que son las dos cosas por las que
+/// se mueve. Se pinta con el pintor que le pasa quien la llama porque ese pintor es el que
+/// recorta al hueco del editor: una línea larga se sale de ese hueco y sin recortar se metería
+/// en la columna de al lado. La fuente también llega hecha porque el pintor no la resuelve.
 fn pintar_linea(
-    ui: &mut egui::Ui,
+    pintor: &egui::Painter,
+    fuente: &egui::FontId,
     numero: usize,
     linea: &str,
     lenguaje: Option<&dyn LanguageProvider>,
     medidas: &Medidas,
-    desplazamiento: egui::Vec2,
+    correr: egui::Vec2,
 ) {
-    let fuente = ESTILO.resolve(ui.style());
     let arriba = egui::pos2(
         ANCHO_DE_LOS_NUMEROS - MARGEN,
         medidas.punto(numero as u32, 0).y,
-    ) + desplazamiento;
+    ) + correr;
 
-    ui.painter().text(
+    pintor.text(
         arriba,
         egui::Align2::LEFT_TOP,
         format!("{}", numero + 1),
@@ -199,8 +243,8 @@ fn pintar_linea(
 
     let mut columna = 0_u32;
     for token in trocear(linea, lenguaje) {
-        ui.painter().text(
-            medidas.punto(numero as u32, columna) + desplazamiento,
+        pintor.text(
+            medidas.punto(numero as u32, columna) + correr,
             egui::Align2::LEFT_TOP,
             token.texto,
             fuente.clone(),
@@ -233,8 +277,12 @@ fn rueda(ui: &mut egui::Ui) -> egui::Vec2 {
 /// No está aquí la lista del menú Editar porque esa vive en `menu::MENUS` y es un `&'static`
 /// de otro módulo; aquí lo que se repite son las acciones, que es lo que tiene que ser la
 /// misma cosa para que un clic en un sitio y en el otro pidan lo mismo.
-const ACCIONES_DEL_CONTEXTO: &[Accion] =
-    &[DESHACER, REHACER, COPIAR, CORTAR, PEGAR, BUSCAR, REEMPLAZAR];
+///
+/// Copiar, cortar y pegar no están, y no porque el editor no los sepa hacer: llegan como
+/// eventos del teclado, que es de donde los trae el sistema, y funcionan. Lo que no hay es
+/// un comando del core para ellos, así que un botón en el menú sería un botón apagado que
+/// el usuario ve y no puede usar (FE-077).
+const ACCIONES_DEL_CONTEXTO: &[Accion] = &[DESHACER, REHACER, BUSCAR, REEMPLAZAR];
 
 /// Con qué id egui recuerda la zona del editor a la que se le abre el menú contextual.
 ///
@@ -1076,6 +1124,10 @@ mod tests {
     /// El hueco del editor es de tamaño fijo y no crece con lo que se pinta, porque un
     /// hueco que crece con el contenido es un hueco sin scroll: en la ventana el editor
     /// está dentro de un panel de tamaño fijo, y aquí hay que dárselo.
+    ///
+    /// El desplazamiento se pide y se devuelve al estado visual de la aplicación, igual que
+    /// en la ventana: el editor no lo guarda, y sin esa vuelta el documento se quedaría
+    /// clavado en la primera línea para siempre.
     fn dibujar(
         context: &egui::Context,
         app: &mut App,
@@ -1093,11 +1145,13 @@ mod tests {
                     egui::vec2(ancho, ALTO_DEL_EDITOR),
                 )),
                 |ui| {
+                    let mut desplazamiento = app.state().desplazamiento();
                     super::panel(
                         ui,
                         PestanaVisual::nuevo(documento.as_deref_mut(), lenguaje),
-                        app,
+                        &mut desplazamiento,
                     );
+                    app.state_mut().set_desplazamiento(desplazamiento);
                 },
             );
         });

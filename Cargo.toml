@@ -31,12 +31,14 @@ unimplemented = "deny"
 # con el renderizador de OpenGL y las fuentes incluidas; los backends de Linux y el
 # lector de pantalla web se dejan fuera porque aqui no se usan.
 eframe = { version = "0.36.2", default-features = false, features = ["default_fonts", "glow"] }
-# El logo de la ventana. Solo PNG, y con los mismos features que ya usan las
-# dependencias de eframe, asi que no se compila nada que no estuviera compilado.
+# El logo de la ventana. `image` decodifica el PNG del logo; solo trae el formato
+# PNG, y con los mismos features que ya usan las dependencias de eframe, asi que no
+# se compila nada que no estuviera compilado.
 image = { version = "0.25", default-features = false, features = ["png"] }
 
 [build-dependencies]
-# Incrusta el icono en el ejecutable. Es Rust puro y no necesita el SDK de Windows.
+# Incrusta el icono en el ejecutable. `winresource` es Rust puro y no necesita el
+# SDK de Windows.
 winresource = "0.1"
 
 [dev-dependencies]

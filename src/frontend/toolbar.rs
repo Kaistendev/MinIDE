@@ -13,8 +13,8 @@
 //! preguntarle. Lo que hace un clic es dejar escrito qué comando se ha pedido, y FE-040 a
 //! FE-042 son las que enchufen la ejecución donde ya está el sitio.
 //!
-//! Por eso estos botones van encendidos y los elementos de menú sin comando no: un botón
-//! apagado no llega ni a pedir nada, y aquí sí hay algo que pedir.
+//! Por eso estos botones van encendidos y lo que no se puede hacer no está: un botón
+//! apagado en la barra sería un botón que se ve y no se puede usar (FE-077).
 
 use eframe::egui;
 
@@ -200,16 +200,12 @@ mod tests {
                 .unwrap_or_else(|| panic!("la barra no tiene ningun boton que diga {nombre:?}"));
 
             assert_eq!(
-                boton.comando,
-                Some(comando),
+                boton.comando, comando,
                 "el boton {nombre:?} tiene que pedir {comando:?}"
             );
         }
 
-        let comandos: HashSet<Command> = BOTONES
-            .iter()
-            .map(|boton| boton.comando.expect("un boton de la barra pide algo"))
-            .collect();
+        let comandos: HashSet<Command> = BOTONES.iter().map(|boton| boton.comando).collect();
         assert_eq!(
             comandos.len(),
             BOTONES.len(),
@@ -257,7 +253,7 @@ mod tests {
 
             assert_eq!(
                 app.peticiones(),
-                [boton.comando.expect("un boton de la barra pide algo")],
+                [boton.comando],
                 "el botón {:?} tiene que pedir su comando y solo ese",
                 boton.nombre
             );

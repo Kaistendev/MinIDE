@@ -234,14 +234,14 @@
   daba por inexistente). El atajo y el botón piden el comando, pero todavía no hay quien
   lo ejecute: el editor de la ventana es una fase posterior.
 
-- [ ] **T-044 — Implementar panel de salida**  
+- [x] **T-044 — Implementar panel de salida**  
   **RF:** RF-13  
   **Hecho cuando:** la UI puede mostrar texto de salida y error de procesos sin bloquearse.  
-  **Estado:** el panel y la separación de flujos son FE-034 y FE-035, y ya están: la
-  ventana muestra la salida de un proceso línea a línea y distingue lo normal de lo que
-  es error. Falta la otra mitad, que es que la salida llegue sola mientras corre: eso es
-  T-098, que sigue sin hacer -el core solo tiene los tipos de resultado-, y por eso esta
-  tarea no se cierra todavía.
+  **Estado:** cerrada. El panel y la separación de flujos son FE-034 y FE-035: la
+  ventana muestra la salida de un proceso línea a línea y distingue lo normal de lo
+  que es error (`salida.rs`, FE-034/FE-035). La otra mitad —que la salida llegue sola
+  mientras el proceso corre— la cerró T-098: el registro recoge las líneas en vivo y
+  `Operaciones::salida` alimenta el panel con lo que hay en cada frame, sin bloquear.
 
 - [x] **T-045 — Añadir números de línea y resaltado básico**  
   **RF:** RF-03, RF-07, RF-09  
@@ -484,58 +484,123 @@
   `ActivateDocument`, que va con los de documentos porque es de los que ha ido
   pidiendo la interfaz, como ellos (T-096).
 
-- [ ] **T-098 — Ejecutar procesos sin bloquear la interfaz**  
+- [x] **T-098 — Ejecutar procesos sin bloquear la interfaz**  
   **RF:** RF-11, RF-12, RF-13  
   **Hecho cuando:** un proceso externo se lanza en segundo plano, se capturan
   stdout y stderr mientras corre, se puede detener y su estado se puede consultar
   sin bloquear.  
-  **Nota:** `runtime.rs` solo tiene los tipos de resultado (`ProcessState`,
-  `RunResult`); no lanza nada. `AGENTS.md` §14 lo exige y FE-043 lo comprueba.
-  T-056 y T-058 lo usaran, pero no lo nombravan.
+  **Estado:** `ProcessRegistry` en `runtime.rs` lanza el proceso con `spawn` —sin
+  esperar— y lo registra. La captura en vivo son dos hilos lectores, uno por flujo
+  (`Stdio::piped()` + `BufReader::lines()`), que mandan cada línea por un canal con
+  su origen (`OutputStream` y `OutputLine`). `RunningProcess::read_output` recoge lo
+  que ya ha llegado con `try_recv` —sin bloquear, que es lo que FE-043 exige— y lo
+  acumula en la salida; `result` espera a los lectores al terminar para no perder la
+  última línea. El panel de salida de la ventana (`Operaciones::salida`, FE-034 y
+  FE-035) se alimenta de ahí, así que la salida llega mientras corre y no solo al
+  final. Tests: unitarios del core (líneas, flujos y acumulación) y de la ventana,
+  y pruebas ignoradas que lanzan un proceso real, en `runtime.rs` y
+  `frontend::operaciones`.
 
 ---
 
 # Fase 10 — Tests de regresión y hardening
 
-- [ ] **T-085 — Añadir tests de regresión de documentos**  
+- [x] **T-085 — Añadir tests de regresión de documentos**  
   **RF:** RF-02, RF-03, RF-04  
-  **Hecho cuando:** bugs corregidos del editor quedan cubiertos por tests reproducibles.
+  **Hecho cuando:** bugs corregidos del editor quedan cubiertos por tests reproducibles.  
+  **Estado:** `tests/document_regression.rs`, 18 casos. El repositorio no tenía un
+  registro de bugs, así que los casos se derivaron de las reglas ya escritas en
+  `specs.md` y `plan.md` y de los unitarios existentes: dónde puede y no puede estar
+  el cursor, qué cuenta como un paso de undo, qué pasa al borrar entre líneas, que
+  `replace_all` termina cuando el reemplazo contiene lo buscado, y el ciclo de
+  guardar, cerrar, reabrir y volver a abrir. No hizo falta cambiar el core.
 
-- [ ] **T-086 — Añadir tests de regresión de proyectos**  
+- [x] **T-086 — Añadir tests de regresión de proyectos**  
   **RF:** RF-05, RF-06  
-  **Hecho cuando:** creación, apertura, renombrado y cierre de proyecto tienen casos de regresión cubiertos.
+  **Hecho cuando:** creación, apertura, renombrado y cierre de proyecto tienen casos de regresión cubiertos.  
+  **Estado:** `tests/project_regression.rs`, 16 casos, sobre el ciclo completo de
+  proyecto en `Project` y `Workspace`: crear, abrir, renombrar, cerrar y reabrir,
+  con las negativas (directorio ocupado, no-proyecto, WPF, nombre que pisaría otro,
+  raíz relativa) y el cierre del espacio de trabajo. Tampoco hizo falta cambiar el
+  core: lo que se corrigió al escribirlos eran expectativas del propio test.
 
-- [ ] **T-087 — Añadir snapshot/golden tests de código WinForms**  
+- [x] **T-087 — Añadir snapshot/golden tests de código WinForms**  
   **RF:** RF-08  
-  **Hecho cuando:** los outputs esperados del generador WinForms están versionados y un cambio inesperado rompe el test.
+  **Hecho cuando:** los outputs esperados del generador WinForms están versionados y un cambio inesperado rompe el test.  
+  **Estado:** los tres casos de WinForms de `tests/golden_generation.rs` comparan
+  contra `tests/golden/winforms/*.txt`. `.gitattributes` fija `eol=lf` en
+  `tests/golden/**` para que el `autocrlf` de Windows no cambie la referencia.  
+  **Bug:** al versionar el golden se vio que el generador escribía las banderas entre
+  comillas (`this.class.Visible = "false";`), que no compila. Se arregló en
+  `src/generation/winforms.rs` (`BOOLEAN_PROPERTIES` y `property_line`) y los
+  unitarios que fijaban el texto entrecomillado se corrigieron con él.
 
-- [ ] **T-088 — Añadir snapshot/golden tests de código Swing**  
+- [x] **T-088 — Añadir snapshot/golden tests de código Swing**  
   **RF:** RF-10  
-  **Hecho cuando:** los outputs esperados del generador Swing están versionados y un cambio inesperado rompe el test.
+  **Hecho cuando:** los outputs esperados del generador Swing están versionados y un cambio inesperado rompe el test.  
+  **Estado:** los tres casos de Swing de `tests/golden_generation.rs` contra
+  `tests/golden/swing/*.txt`. El generador de Swing no tenía el bug de las banderas;
+  el golden lo deja fijado.
 
-- [ ] **T-089 — Ejecutar smoke test C# completo**  
+- [x] **T-089 — Ejecutar smoke test C# completo**  
   **RF:** RF-06, RF-07, RF-08, RF-11, RF-12, RF-13, RF-16  
-  **Hecho cuando:** el flujo crear → editar → diseñar → compilar → ejecutar funciona sin intervención manual inesperada.
+  **Hecho cuando:** el flujo crear → editar → diseñar → compilar → ejecutar funciona sin intervención manual inesperada.  
+  **Estado:** `tests/winforms_end_to_end.rs` hace el flujo entero —crear, editar el
+  archivo del diseñador y el que el usuario conserva, diseñar, compilar, ejecutar y
+  detener—. El caso `#[ignore]` pasó con el SDK de .NET 10.0.301 y su runtime de
+  Windows Forms: el proceso se quedó vivo y se detuvo sin cerrar el IDE.
 
-- [ ] **T-090 — Ejecutar smoke test Java completo**  
+- [x] **T-090 — Ejecutar smoke test Java completo**  
   **RF:** RF-06, RF-09, RF-10, RF-11, RF-12, RF-13, RF-16  
-  **Hecho cuando:** el flujo crear → editar → diseñar → compilar → ejecutar funciona sin intervención manual inesperada.
+  **Hecho cuando:** el flujo crear → editar → diseñar → compilar → ejecutar funciona sin intervención manual inesperada.  
+  **Estado:** igual que T-089, en `tests/java_swing_end_to_end.rs`. El caso
+  `#[ignore]` pasó con el JDK 25.0.3: compiló, arrancó y se detuvo.
 
-- [ ] **T-091 — Revisar dependencias**  
+- [x] **T-091 — Revisar dependencias**  
   **RF:** —  
-  **Hecho cuando:** no existen dependencias no utilizadas y cada dependencia externa relevante tiene una razón clara.
+  **Hecho cuando:** no existen dependencias no utilizadas y cada dependencia externa relevante tiene una razón clara.  
+  **Estado:** las tres dependencias declaradas se usan: `eframe` en
+  `src/frontend/`, `image` solo en `src/frontend/icon.rs` para el logo, y
+  `winresource` en `build.rs` para el icono del ejecutable. `tests/quality_policy.rs`
+  añade el guard: cada dependencia de `Cargo.toml` se usa en el crate y lleva su
+  razón escrita al lado, que la nombra.
 
-- [ ] **T-092 — Revisar acoplamiento del core**  
+- [x] **T-092 — Revisar acoplamiento del core**  
   **RF:** RF-15  
-  **Hecho cuando:** el core no contiene lógica específica duplicada de C#, Java, WinForms o Swing fuera de sus proveedores.
+  **Hecho cuando:** el core no contiene lógica específica duplicada de C#, Java, WinForms o Swing fuera de sus proveedores.  
+  **Estado:** revisados los módulos del core. Los nombres de lenguaje, framework y
+  tipo de proyecto son vocabulario del dominio (`LanguageId`, `FrameworkId`,
+  `ProjectType`), y la detección de archivos de proyecto está una sola vez, en
+  `project.rs`. La lógica concreta (generación, componentes, toolchains) vive en sus
+  proveedores. `tests/core_boundaries.rs` lo fija: ningún módulo del core, fuera de
+  `generation/`, `framework/`, `language/`, `toolchain/`, `templates.rs`,
+  `supports.rs` y el frontend, menciona `System.Windows.Forms`, `javax.swing`, un
+  tipo de control concreto ni el nombre de una herramienta.
 
-- [ ] **T-093 — Ejecutar suite completa**  
+- [x] **T-093 — Ejecutar suite completa**  
   **RF:** Todos los RF del MVP  
-  **Hecho cuando:** `cargo test`, `cargo fmt --check`, `cargo clippy` y los smoke/integration tests disponibles terminan correctamente.
+  **Hecho cuando:** `cargo test`, `cargo fmt --check`, `cargo clippy` y los smoke/integration tests disponibles terminan correctamente.  
+  **Estado:** `cargo fmt --all --check` limpio, `cargo clippy --all-targets -- -D
+  warnings` limpio, `cargo test` sin fallos en ningún target, y `cargo test --
+  --ignored` con los 29 casos que dependen de herramientas y entorno, todos en verde.
 
-- [ ] **T-094 — Verificar definición de terminado del MVP**  
+- [x] **T-094 — Verificar definición de terminado del MVP**  
   **RF:** Todos los RF del MVP  
-  **Hecho cuando:** se puede demostrar cada flujo principal del MVP y no quedan requisitos funcionales sin trazabilidad a una tarea completada.
+  **Hecho cuando:** se puede demostrar cada flujo principal del MVP y no quedan requisitos funcionales sin trazabilidad a una tarea completada.  
+  **Estado:** cada requisito tiene tarea y prueba que lo demuestra: RF-01
+  `tests/frontend_integration.rs`; RF-02/03/04 `tests/document_regression.rs` y
+  `tests/editor_flow.rs`; RF-05/06 `tests/project_regression.rs` y
+  `tests/filesystem.rs`; RF-07/08 `tests/golden_generation.rs` y
+  `tests/winforms_end_to_end.rs`; RF-09/10 `tests/golden_generation.rs`,
+  `tests/java_swing_end_to_end.rs` y `tests/jdk_detection.rs`; RF-11/12/13/16 los
+  smoke tests anteriores y `tests/jdk_detection.rs`; RF-14 los unitarios de
+  `commands.rs`; RF-15 `tests/module_boundaries.rs` y `tests/core_boundaries.rs`.  
+  **Hallazgo:** la trazabilidad está completa, pero **la definición de terminado no
+  se puede cerrar del todo**: en la fase 9, **T-098** sigue sin hacer (el runtime
+  solo tiene los tipos de resultado y no lanza nada) y de ella dependen T-043, T-044
+  y T-046, que siguen abiertas por eso. Compilar y ejecutar se demuestran en los
+  smoke tests, pero la salida en vivo que pide `AGENTS.md` §14 todavía no está en el
+  core. Es lo único que separa al MVP de su definición de terminado.
 
 ---
 

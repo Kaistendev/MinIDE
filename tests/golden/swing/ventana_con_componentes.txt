@@ -1,0 +1,28 @@
+        private JLabel titleLabel;
+        private JTextField nameField;
+        private JPanel rootPanel;
+        private JButton okButton;
+
+        private void buildContent() {
+            setSize(640, 480);
+            setTitle("Ventana principal");
+            getContentPane().setLayout(null);
+
+            titleLabel = new JLabel();
+            titleLabel.setBounds(12, 12, 200, 20);
+            titleLabel.setText("MiniIDE");
+            getContentPane().add(titleLabel);
+
+            nameField = new JTextField();
+            nameField.setBounds(12, 40, 200, 24);
+            getContentPane().add(nameField);
+
+            rootPanel = new JPanel();
+            rootPanel.setBounds(8, 70, 400, 200);
+            getContentPane().add(rootPanel);
+
+            okButton = new JButton();
+            okButton.setBounds(312, 280, 96, 30);
+            okButton.setText("Aceptar");
+            getContentPane().add(okButton);
+        }

@@ -103,15 +103,36 @@ fn component_body(component: &DesignerComponent) -> String {
     // que no se ha tocado en el disenador se queda con el valor que ya tiene el
     // control, y el codigo generado no se llena de lineas que no dicen nada.
     for (property, value) in component.properties() {
-        body.push_str(&format!(
-            "            this.{name}.{property} = \"{}\";\n",
-            literal(value)
-        ));
+        body.push_str(&property_line(&name, property, value));
     }
 
     body.push_str(&format!("            this.Controls.Add(this.{name});\n"));
 
     body
+}
+
+/// Las propiedades de Windows Forms cuyo valor es un `bool` y no un `string`.
+///
+/// Van sin comillas porque asignar una cadena a un `bool` no compila. Se listan
+/// por nombre y no se decide por el valor para que un `Text` que el usuario haya
+/// escrito como "true" siga saliendo como el texto que es.
+const BOOLEAN_PROPERTIES: [&str; 5] = [
+    "Visible",
+    "Enabled",
+    "ReadOnly",
+    "Multiline",
+    "UseVisualStyleBackColor",
+];
+
+/// La linea que pone una propiedad del control.
+fn property_line(name: &str, property: &str, value: &str) -> String {
+    let value = if BOOLEAN_PROPERTIES.contains(&property) {
+        value.to_string()
+    } else {
+        format!("\"{}\"", literal(value))
+    };
+
+    format!("            this.{name}.{property} = {value};\n")
 }
 
 /// Comprueba que un nombre de control puede ser el nombre de un campo de C#.
@@ -385,7 +406,7 @@ mod tests {
         let mut form = form();
         form.set_visible("okButton", false).unwrap();
 
-        assert!(code_of(&form).contains(r#"this.okButton.Visible = "false";"#));
+        assert!(code_of(&form).contains("this.okButton.Visible = false;"));
     }
 
     #[test]
@@ -393,7 +414,43 @@ mod tests {
         let mut form = form();
         form.set_enabled("okButton", false).unwrap();
 
-        assert!(code_of(&form).contains(r#"this.okButton.Enabled = "false";"#));
+        assert!(code_of(&form).contains("this.okButton.Enabled = false;"));
+    }
+
+    /// T-087: una bandera de Windows Forms es un `bool`, no un `string`.
+    ///
+    /// Escribir `Visible = "false"` no compila, porque no hay conversion
+    /// implicita de una cadena a `bool`. El bug lo traia el generador y lo
+    /// fijaban estos mismos tests, asi que el caso de ahora es tambien la
+    /// referencia golden `winforms/propiedades`.
+    #[test]
+    fn a_flag_property_is_generated_as_a_boolean_and_not_as_a_string() {
+        let mut form = form();
+        form.set_visible("okButton", false).unwrap();
+        form.set_enabled("okButton", true).unwrap();
+
+        let code = code_of(&form);
+
+        assert!(code.contains("this.okButton.Visible = false;"), "{code}");
+        assert!(code.contains("this.okButton.Enabled = true;"), "{code}");
+        assert!(!code.contains(r#"Visible = "false""#), "{code}");
+    }
+
+    /// El texto de un control si es una cadena, aunque se escriba `true`.
+    ///
+    /// Decidir por el valor habia hecho pensar en hacerlo asi: un `Text` de
+    /// "false" tiene que seguir saliendo entrecomillado, porque para Windows
+    /// Forms es texto y no una bandera.
+    #[test]
+    fn a_text_that_looks_like_a_boolean_stays_a_string() {
+        let mut form = form();
+        form.set_text("okButton", "false").unwrap();
+
+        assert!(
+            code_of(&form).contains(r#"this.okButton.Text = "false";"#),
+            "{}",
+            code_of(&form)
+        );
     }
 
     #[test]
